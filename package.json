@@ -1,0 +1,21 @@
+{
+  "name": "@extrabrain/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": "24.20.0" },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build:bundle": "node scripts/build-bundle.mjs",
+    "build:sea": "npm run build:bundle && node scripts/build-sea.mjs",
+    "check": "npm run typecheck && npm test"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "postject": "1.0.0-alpha.6",
+    "typescript": "5.8.3",
+    "vite": "7.3.6",
+    "vitest": "4.1.11"
+  }
+}

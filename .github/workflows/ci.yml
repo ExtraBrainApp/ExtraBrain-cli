@@ -1,0 +1,71 @@
+name: CLI validation
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            target: unix
+          - runner: macos-15-intel
+            target: unix
+          - runner: ubuntu-24.04
+            target: unix
+          - runner: ubuntu-24.04-arm
+            target: unix
+          - runner: windows-2025
+            target: windows
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.20.0
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - name: Locate Windows SDK signing tool
+        if: matrix.target == 'windows'
+        shell: pwsh
+        run: |
+          $kits = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin'
+          $tool = Get-ChildItem -Path $kits -Filter signtool.exe -Recurse | Where-Object { $_.FullName -match '\\x64\\' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $tool) { throw 'Windows SDK signtool.exe is required' }
+          "EXTRABRAIN_SIGNTOOL_PATH=$($tool.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - run: npm run build:sea
+      - name: Smoke test Unix executable
+        if: matrix.target == 'unix'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(dist/extrabrain --version)" = "$(node -p 'require("./package.json").version')"
+          set +e
+          result=$(dist/extrabrain --json capabilities)
+          code=$?
+          set -e
+          test "$code" = 3
+          echo "$result" | jq -e '.code == 3'
+      - name: Smoke test Windows executable
+        if: matrix.target == 'windows'
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          $version = node -p 'require("./package.json").version'
+          $actualVersion = & dist/extrabrain.exe --version
+          Write-Output "Version output: $actualVersion; exit: $LASTEXITCODE"
+          if ($LASTEXITCODE -ne 0 -or $actualVersion -ne $version) { throw 'Version mismatch' }
+          $output = & dist/extrabrain.exe --json capabilities
+          $exitCode = $LASTEXITCODE
+          Write-Output "Capabilities output: $output; exit: $exitCode"
+          $result = $output | ConvertFrom-Json
+          if ($exitCode -ne 3 -or $result.code -ne 3) { throw 'Capabilities contract failed' }
+          exit 0
