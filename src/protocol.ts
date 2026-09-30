@@ -1,6 +1,7 @@
 import { CliApiError } from './apiClient.service'
 
 export type DocumentCapability =
+  | 'documentGroups'
   | 'documentImport'
   | 'documentMetadata'
   | 'extractedText'
