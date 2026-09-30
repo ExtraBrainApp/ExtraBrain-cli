@@ -34,21 +34,6 @@ jobs:
         with:
           node-version: 24.20.0
           cache: npm
-      - name: Check Apple signing configuration
-        env:
-          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-        run: |
-          set -euo pipefail
-          for name in APPLE_CERTIFICATE_BASE64 APPLE_CERTIFICATE_PASSWORD APPLE_TEAM_ID APPLE_ID APPLE_APP_SPECIFIC_PASSWORD; do
-            if test -z "${!name}"; then
-              echo "Missing GitHub Actions secret: $name" >&2
-              exit 1
-            fi
-          done
       - name: Calculate release version
         id: version
         env:
@@ -99,35 +84,6 @@ jobs:
         run: npm run check
       - name: Build executable
         run: npm run build:sea
-      - name: Sign and notarize macOS executable
-        shell: bash
-        env:
-          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-        run: |
-          set -euo pipefail
-          certificate="$RUNNER_TEMP/cli-signing.p12"
-          keychain="$RUNNER_TEMP/cli-signing.keychain-db"
-          trap 'security delete-keychain "$keychain" >/dev/null 2>&1 || true; rm -f "$certificate"' EXIT
-          test -n "$APPLE_CERTIFICATE_BASE64"
-          test -n "$APPLE_CERTIFICATE_PASSWORD"
-          test -n "$APPLE_TEAM_ID"
-          test -n "$APPLE_ID"
-          test -n "$APPLE_APP_SPECIFIC_PASSWORD"
-          printf '%s' "$APPLE_CERTIFICATE_BASE64" | base64 -D -o "$certificate"
-          security create-keychain -p "$APPLE_CERTIFICATE_PASSWORD" "$keychain"
-          security unlock-keychain -p "$APPLE_CERTIFICATE_PASSWORD" "$keychain"
-          security import "$certificate" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
-          identity=$(security find-identity -v -p codesigning "$keychain" | grep "Developer ID Application:.*($APPLE_TEAM_ID)" | head -1 | awk '{ print $2 }')
-          test -n "$identity"
-          codesign --force --options runtime --timestamp --sign "$identity" --keychain "$keychain" dist/extrabrain
-          codesign --verify --strict --verbose=2 dist/extrabrain
-          ditto -c -k --keepParent dist/extrabrain "$RUNNER_TEMP/extrabrain-notary.zip"
-          xcrun notarytool submit "$RUNNER_TEMP/extrabrain-notary.zip" --apple-id "$APPLE_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait --output-format json > "$RUNNER_TEMP/notary-result.json"
-          jq -e '.status == "Accepted"' "$RUNNER_TEMP/notary-result.json"
       - name: Verify and archive macOS executable
         shell: bash
         env:
@@ -191,4 +147,4 @@ jobs:
           set -euo pipefail
           cd release-assets
           sha256sum extrabrain-* > SHA256SUMS
-          gh release create "$RELEASE_TAG" extrabrain-* SHA256SUMS --title "$RELEASE_TAG" --generate-notes --verify-tag
+          gh release create "$RELEASE_TAG" extrabrain-* SHA256SUMS --title "$RELEASE_TAG" --notes "Unsigned macOS CLI release. This executable is not Developer ID signed or notarized." --verify-tag

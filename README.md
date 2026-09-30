@@ -4,7 +4,7 @@
 
 ## Install
 
-Supported release targets are macOS arm64 and x64. Releases are signed and notarized. Downloaded archives are checked against the release's `SHA256SUMS` before an existing executable is replaced.
+Supported release targets are macOS arm64 and x64. The current release is not Developer ID signed or notarized; macOS Gatekeeper may require an extra approval when opening a downloaded executable. Downloaded archives are checked against the release's `SHA256SUMS` before an existing executable is replaced.
 
 macOS:
 
@@ -71,7 +71,7 @@ Use Node 24.20.0 and npm 11.19.0 to build from source. `npm ci`, `npm run typech
 
 ## Release
 
-Run the `Standalone CLI release` workflow on `main` and choose `patch`, `minor`, or `major`. The workflow increments the version in `package.json` and `package-lock.json`, builds signed and notarized macOS arm64 and x64 archives, then commits the new version, creates its tag, and publishes the archives with `SHA256SUMS`. The CLI reads its version from `package.json`, so there is no separate version to edit.
+Run the `Standalone CLI release` workflow on `main` and choose `patch`, `minor`, or `major`. The workflow increments the version in `package.json` and `package-lock.json`, builds macOS arm64 and x64 archives, then commits the new version, creates its tag, and publishes the archives with `SHA256SUMS`. The CLI reads its version from `package.json`, so there is no separate version to edit. A future signed and notarized build should use a new release version because signing changes the executable and its checksum.
 
 ## License
 
