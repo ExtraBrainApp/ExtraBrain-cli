@@ -14,9 +14,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: '["self-hosted","macOS","ARM64"]'
-          - runner: '["self-hosted","macOS","X64"]'
-    runs-on: ${{ fromJSON(matrix.runner) }}
+          - runner: macos-15
+          - runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
