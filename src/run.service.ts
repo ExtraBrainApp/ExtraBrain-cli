@@ -19,7 +19,7 @@ const HELP = `Usage: extrabrain [--json] <command>
 Commands:
   pair [--scope <scope>]...
   capabilities
-  documents import [--recursive] [--] <files-or-directories...>
+  documents import [--group <name> | --group-id <id>] [--recursive] [--] <files-or-directories...>
   documents resume <resume-id>
   documents status [--item] <batch-or-item-id>
   documents list
@@ -47,6 +47,8 @@ const DEFAULT_DOCUMENT_SCOPES = [
 ] as const
 
 const VALUE_FLAGS = new Set([
+  'group',
+  'group-id',
   'output',
   'generation',
   'offset',
@@ -78,11 +80,13 @@ const parseArguments = (args: readonly string[]): ParsedArguments => {
       continue
     }
     if (!afterSeparator && value.startsWith('--')) {
-      const [name, inlineValue] = value.slice(2).split('=', 2)
+      const separator = value.indexOf('=')
+      const name = value.slice(2, separator < 0 ? undefined : separator)
+      const inlineValue = separator < 0 ? undefined : value.slice(separator + 1)
       if (inlineValue !== undefined) setFlag(flags, name, inlineValue)
       else if (VALUE_FLAGS.has(name)) {
         const next = args[index + 1]
-        if (!next) throw new Error(`--${name} requires a value`)
+        if (!next || next.startsWith('--')) throw new Error(`--${name} requires a value`)
         setFlag(flags, name, next)
         index += 1
       } else setFlag(flags, name, true)
@@ -90,6 +94,18 @@ const parseArguments = (args: readonly string[]): ParsedArguments => {
     }
     if (afterSeparator) paths.push(value)
     else command.push(value)
+  }
+  for (const name of ['group', 'group-id']) {
+    const value = flags.get(name)
+    if (value !== undefined && (typeof value !== 'string' || !value.trim())) {
+      throw new Error(`--${name} requires a value`)
+    }
+  }
+  if (flags.has('group') && flags.has('group-id')) {
+    throw new Error('--group and --group-id are mutually exclusive')
+  }
+  if ((flags.has('group') || flags.has('group-id')) && (command[0] !== 'documents' || command[1] !== 'import')) {
+    throw new Error('Group selectors are only supported by documents import; resume keeps its saved destination')
   }
   return { command, flags, json: flags.has('json'), paths }
 }

@@ -21,7 +21,12 @@ export interface ResumeManifest {
   createdAt: number
   id: string
   items: ResumeItem[]
-  schemaVersion: 1
+  schemaVersion: 1 | 2
+  group?: {
+    selector: { kind: 'name' | 'id'; value: string }
+    resolutionKey: string
+    resolved?: { id: string; name: string }
+  }
 }
 
 const defaultDirectory = (): string => join(homedir(), '.local', 'state', 'extrabrain', 'imports')
@@ -55,7 +60,7 @@ export class ResumeStore {
 
   async load(id: string): Promise<ResumeManifest> {
     const parsed = JSON.parse(await readFile(this.path(id), 'utf8')) as unknown
-    if (!isResumeManifest(parsed)) throw new Error('Resume manifest is invalid')
+    if (!isResumeManifest(parsed) || parsed.id !== id) throw new Error('Resume manifest is invalid')
     return parsed
   }
 
@@ -78,7 +83,9 @@ const isResumeManifest = (value: unknown): value is ResumeManifest => {
   if (!value || typeof value !== 'object') return false
   const manifest = value as Partial<ResumeManifest>
   return (
-    manifest.schemaVersion === 1 &&
+    (manifest.schemaVersion === 1 || manifest.schemaVersion === 2) &&
+    (manifest.schemaVersion !== 1 || manifest.group === undefined) &&
+    validGroupIntent(manifest) &&
     typeof manifest.id === 'string' &&
     typeof manifest.batchIdempotencyKey === 'string' &&
     Array.isArray(manifest.items) &&
@@ -90,5 +97,22 @@ const isResumeManifest = (value: unknown): value is ResumeManifest => {
         typeof item.idempotencyKey === 'string' &&
         ['pending', 'failed', 'succeeded'].includes(item.status)
     )
+  )
+}
+
+const validGroupIntent = (manifest: Partial<ResumeManifest>): boolean => {
+  const group = manifest.group
+  if (group === undefined) return true
+  if (!group || typeof group !== 'object') return false
+  return (
+    Number.isSafeInteger(manifest.createdAt) && Number(manifest.createdAt) > 0 &&
+    typeof group.resolutionKey === 'string' && group.resolutionKey.length > 0 &&
+    !!group.selector && ['name', 'id'].includes(group.selector.kind) &&
+    typeof group.selector.value === 'string' && group.selector.value.trim().length > 0 &&
+    (group.resolved === undefined
+      ? !manifest.batchId
+      : !!group.resolved && typeof group.resolved.id === 'string' && group.resolved.id.length > 0 &&
+        typeof group.resolved.name === 'string' && group.resolved.name.length > 0 &&
+        (group.selector.kind !== 'id' || group.selector.value === group.resolved.id))
   )
 }

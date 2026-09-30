@@ -65,6 +65,25 @@ The CLI reads files from its own filesystem namespace. A container or remote age
 
 JSON commands return `{ "code": number, "data": object | null, "message": string }`. Exit codes: `0` success, `1` failure, `2` usage, `3` app not running, `4` authentication or revocation, `5` conflict, `6` partial batch, `7` protected storage unavailable, `8` unsupported API or capability. A partial batch reports every file and a resume ID. No binary content or credential appears in command output.
 
+## Document groups
+
+Create a named group or append another batch to the same group:
+
+```sh
+extrabrain --json documents import --group "Acme interview" -- resume.pdf notes.md
+extrabrain --json documents import --group "Acme interview" -- follow-up.md
+extrabrain --json documents import --group-id <group-id> -- another-note.md
+extrabrain --json documents resume <resume-id>
+```
+
+`--group` and `--group-id` are mutually exclusive. Names support Unicode; quote spaces and use `--group=-name` for a name beginning with a dash. Grouped imports require the app's `documentGroups` capability. Existing commands without a group continue to work with apps that lack that capability. ID lookup and grouped resume use the default pairing's metadata scope.
+
+Each batch accepts up to 20 files; append additional batches to grow a group beyond 20. The same content can be imported independently into different named groups. Imports without a destination remain Ungrouped and retain library-wide duplicate checks.
+
+JSON results include the destination's stable ID and current name. Resume keeps the original group ID, batch key, and item keys and skips successful files. A renamed group remains the same destination. A deleted group fails without falling back to Ungrouped or binding to a new group with the old name. Destination flags cannot override a resume.
+
+The CLI saves its resolution key before sending a name request, so a lost response can be retried safely. An unresolved name request expires after seven days and requires a new, explicit import. Once the group ID is saved, resume never resolves its name again. Legacy version-1 manifests remain supported as ungrouped imports. Failed setup messages include the saved resume command.
+
 ## Develop
 
 Use Node 24.20.0 and npm 11.19.0 to build from source. `npm ci`, `npm run typecheck`, and `npm test` validate the CLI. `npm run build:sea` creates a self-contained executable for the host platform in `dist/`. Source and direct tests were extracted from ExtraBrain PR #985. The app owns the local API, approval flow, ingestion, and persistence; this repository owns only the CLI.

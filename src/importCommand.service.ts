@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { lstat } from 'node:fs/promises'
 import type { DocumentApiClient } from './apiClient.service'
@@ -104,7 +104,8 @@ const createBatch = async (
   if (manifest.batchId) return
   const response = await requestJson(client, '/api/v1/document-imports/batches', 'POST', {
     idempotencyKey: manifest.batchIdempotencyKey,
-    itemCount: manifest.items.length
+    itemCount: manifest.items.length,
+    ...(manifest.group ? { groupId: manifest.group.resolved?.id } : {})
   })
   const batch = response.batch as { id?: unknown } | undefined
   if (typeof batch?.id !== 'string') {
@@ -114,12 +115,46 @@ const createBatch = async (
   await store.save(manifest)
 }
 
+const resolveDestination = async (
+  client: DocumentApiClient,
+  manifest: ResumeManifest,
+  store: ResumeStore
+): Promise<void> => {
+  const intent = manifest.group
+  if (!intent) return
+  const savedId = intent.resolved?.id
+  const explicitId = intent.selector.kind === 'id' ? intent.selector.value : undefined
+  if (!savedId && !explicitId && Math.floor(Date.now() / 1000) - manifest.createdAt >= 7 * 24 * 60 * 60) {
+    throw new CliApiError('EXPIRED_GROUP_INTENT', 'Unresolved group intent expired; start a new import explicitly')
+  }
+  const targetId = savedId ?? explicitId
+  const response = targetId
+    ? await requestJson(client, `/api/v1/document-groups/${encodeURIComponent(targetId)}`)
+    : await requestJson(client, '/api/v1/document-groups/resolve', 'POST', {
+        name: intent.selector.value,
+        idempotencyKey: intent.resolutionKey
+      })
+  const group = response.group as { id?: unknown; name?: unknown } | undefined
+  if (typeof group?.id !== 'string' || !group.id || typeof group.name !== 'string' || !group.name || (targetId && group.id !== targetId)) {
+    throw new CliApiError('INVALID_RESPONSE', 'Group response did not identify the requested destination')
+  }
+  intent.resolved = { id: group.id, name: group.name }
+  await store.save(manifest)
+}
+
 export const executeImport = async (
   client: DocumentApiClient,
   manifest: ResumeManifest,
   store: ResumeStore
 ): Promise<CliResult> => {
-  await createBatch(client, manifest, store)
+  try {
+    await resolveDestination(client, manifest, store)
+    await createBatch(client, manifest, store)
+  } catch (error) {
+    const message = `${error instanceof Error ? error.message : 'Import failed'}. Resume with: extrabrain documents resume ${manifest.id}`
+    if (error instanceof CliApiError) throw new CliApiError(error.code, message, error.status, error.details)
+    throw new Error(message)
+  }
   await runWithConcurrency(
     manifest.items.map((item) => () => processImportItem(client, manifest, item, store)),
     2
@@ -136,12 +171,15 @@ export const executeImport = async (
       status
     })
   )
+  const destination = manifest.group?.resolved
+    ? ` into “${manifest.group.resolved.name}” (${manifest.group.resolved.id})`
+    : ''
   return {
     code: failed ? CliExitCode.PARTIAL_SUCCESS : CliExitCode.SUCCESS,
-    data: { batchId: manifest.batchId, failed, items, resumeId: manifest.id, succeeded },
+    data: { batchId: manifest.batchId, failed, items, resumeId: manifest.id, succeeded, group: manifest.group?.resolved ?? null },
     message: failed
-      ? `Imported ${succeeded} file(s); ${failed} failed. Resume with: extrabrain documents resume ${manifest.id}`
-      : `Imported ${succeeded} file(s).`
+      ? `Imported ${succeeded} file(s)${destination}; ${failed} failed. Resume with: extrabrain documents resume ${manifest.id}`
+      : `Imported ${succeeded} file(s)${destination}.`
   }
 }
 
@@ -149,10 +187,15 @@ export const startImport = async (
   client: DocumentApiClient,
   inputPaths: readonly string[],
   recursive: boolean,
-  store: ResumeStore
+  store: ResumeStore,
+  selector?: NonNullable<ResumeManifest['group']>['selector']
 ): Promise<CliResult> => {
   const files = await expandInputPaths(inputPaths, recursive)
   const manifest = store.create(files)
+  if (selector) {
+    manifest.schemaVersion = 2
+    manifest.group = { selector, resolutionKey: randomUUID() }
+  }
   await store.save(manifest)
   return executeImport(client, manifest, store)
 }

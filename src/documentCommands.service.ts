@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import type { DocumentApiClient } from './apiClient.service'
 import { executeImport, startImport } from './importCommand.service'
 import { requestJson } from './request.service'
+import { requireCapabilities } from './protocol'
 import { CliExitCode, type CliDependencies, type CliResult, type ParsedArguments } from './types'
 
 const getStringFlag = (parsed: ParsedArguments, name: string): string | undefined => {
@@ -80,6 +81,12 @@ export const executeDocumentsCommand = async (
 ): Promise<CliResult> => {
   const action = parsed.command[1]
   if (action === 'import') {
+    const name = getStringFlag(parsed, 'group')
+    const id = getStringFlag(parsed, 'group-id')
+    const selector = name !== undefined
+      ? { kind: 'name' as const, value: name }
+      : id !== undefined ? { kind: 'id' as const, value: id } : undefined
+    if (selector) requireCapabilities(await client.discovery(), ['documentGroups'])
     const inlinePaths = parsed.command.slice(2)
     if (inlinePaths.some((path) => path.startsWith('-'))) {
       throw new Error('File names beginning with - must follow --')
@@ -88,12 +95,15 @@ export const executeDocumentsCommand = async (
       client,
       [...inlinePaths, ...parsed.paths],
       parsed.flags.has('recursive'),
-      dependencies.resumeStore
+      dependencies.resumeStore,
+      selector
     )
   }
   if (action === 'resume') {
     const id = requireArgument(parsed.command, 2, 'resume ID')
-    return executeImport(client, await dependencies.resumeStore.load(id), dependencies.resumeStore)
+    const manifest = await dependencies.resumeStore.load(id)
+    if (manifest.group) requireCapabilities(await client.discovery(), ['documentGroups'])
+    return executeImport(client, manifest, dependencies.resumeStore)
   }
   if (action === 'list') {
     const data = await requestJson(client, '/api/v1/documents')
