@@ -10,7 +10,7 @@ import { runCli } from '../src/run.service'
 
 const directories: string[] = []
 const version = 'v0.1.0'
-const platform = process.platform === 'darwin' ? 'darwin' : 'linux'
+const platform = 'darwin'
 const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
 const asset = `extrabrain-${version}-${platform}-${arch}.tar.gz`
 
@@ -47,7 +47,7 @@ afterEach(async () => {
   await Promise.all(directories.splice(0).map((path) => rm(path, { recursive: true, force: true })))
 })
 
-describe.skipIf(process.platform === 'win32')('public shell installer', () => {
+describe.skipIf(process.platform !== 'darwin')('public shell installer', () => {
   it('installs and replaces a verified executable', async () => {
     const state = await fixture()
     await state.publish('first')
@@ -74,7 +74,7 @@ describe.skipIf(process.platform === 'win32')('public shell installer', () => {
     const fakeBin = join(state.directory, 'fake-bin')
     await mkdir(fakeBin)
     const uname = join(fakeBin, 'uname')
-    await writeFile(uname, '#!/bin/sh\necho Plan9\n')
+    await writeFile(uname, '#!/bin/sh\necho Linux\n')
     await chmod(uname, 0o755)
     const result = state.install({ PATH: `${fakeBin}:${process.env.PATH ?? ''}` })
     expect(result.status).not.toBe(0)

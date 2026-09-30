@@ -2,6 +2,7 @@ import { mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import manifest from '../package.json'
 import { CliApiError, DocumentApiClient } from '../src/apiClient.service'
 import { ResumeStore } from '../src/resumeStore.service'
 import { runCli } from '../src/run.service'
@@ -110,7 +111,7 @@ describe('ExtraBrain CLI contract', () => {
     await expect(runCli(['pair'], defaultHarness.dependencies)).resolves.toBe(CliExitCode.SUCCESS)
     expect(defaultPair).toHaveBeenCalledWith({
       clientName: 'ExtraBrain CLI',
-      clientVersion: '0.1.0',
+      clientVersion: manifest.version,
       scopes: ['documents.metadata.read', 'documents.import']
     })
 
@@ -132,7 +133,7 @@ describe('ExtraBrain CLI contract', () => {
     ).resolves.toBe(CliExitCode.SUCCESS)
     expect(elevatedPair).toHaveBeenCalledWith({
       clientName: 'ExtraBrain CLI',
-      clientVersion: '0.1.0',
+      clientVersion: manifest.version,
       scopes: ['documents.text.read', 'documents.original.export']
     })
   })
@@ -156,7 +157,7 @@ describe('ExtraBrain CLI contract', () => {
     expect(harness.written[0]).toContain('pair [--scope <scope>]...')
     expect(harness.written[0]).toContain('documents delete --revision')
     await expect(runCli(['--version'], harness.dependencies)).resolves.toBe(CliExitCode.SUCCESS)
-    expect(harness.written[1]).toBe('0.1.0')
+    expect(harness.written[1]).toBe(manifest.version)
   })
 
   it('rejects an incompatible API before reading a protected credential', async () => {

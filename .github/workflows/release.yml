@@ -3,96 +3,135 @@ name: Standalone CLI release
 on:
   workflow_dispatch:
     inputs:
-      tag:
-        description: Stable release tag, for example v0.1.0
+      bump:
+        description: Version level to increase
         required: true
-        type: string
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
 
 permissions:
   contents: read
 
+concurrency:
+  group: cli-release
+  cancel-in-progress: false
+
 jobs:
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: macos-15
-            target: darwin-arm64
-          - runner: macos-15-intel
-            target: darwin-x64
-          - runner: ubuntu-24.04
-            target: linux-x64
-          - runner: ubuntu-24.04-arm
-            target: linux-arm64
-          - runner: windows-2025
-            target: win32-x64
-    runs-on: ${{ matrix.runner }}
+  prepare:
+    runs-on: [self-hosted, macOS, ARM64]
+    outputs:
+      base_sha: ${{ steps.version.outputs.base_sha }}
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag }}
+          ref: main
       - uses: actions/setup-node@v4
         with:
           node-version: 24.20.0
           cache: npm
-      - name: Check release version
-        env:
-          RELEASE_TAG: ${{ inputs.tag }}
-        run: node scripts/check-release-version.mjs
-      - name: Install dependencies
-        run: npm ci
-      - name: Validate CLI
-        run: npm run check
-      - name: Locate Windows SDK signing tool
-        if: matrix.target == 'win32-x64'
-        shell: pwsh
-        run: |
-          $kits = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin'
-          $tool = Get-ChildItem -Path $kits -Filter signtool.exe -Recurse | Where-Object { $_.FullName -match '\\x64\\' } | Sort-Object FullName -Descending | Select-Object -First 1
-          if (-not $tool) { throw 'Windows SDK signtool.exe is required' }
-          "EXTRABRAIN_SIGNTOOL_PATH=$($tool.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      - name: Build executable
-        run: npm run build:sea
-      - name: Import Developer ID certificate
-        if: startsWith(matrix.target, 'darwin-')
-        shell: bash
+      - name: Check Apple signing configuration
         env:
           APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-        run: |
-          set -euo pipefail
-          test -n "$APPLE_CERTIFICATE_BASE64"
-          test -n "$APPLE_CERTIFICATE_PASSWORD"
-          printf '%s' "$APPLE_CERTIFICATE_BASE64" | base64 -D -o "$RUNNER_TEMP/cli-signing.p12"
-          security create-keychain -p "$APPLE_CERTIFICATE_PASSWORD" "$RUNNER_TEMP/cli-signing.keychain-db"
-          security unlock-keychain -p "$APPLE_CERTIFICATE_PASSWORD" "$RUNNER_TEMP/cli-signing.keychain-db"
-          security import "$RUNNER_TEMP/cli-signing.p12" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$RUNNER_TEMP/cli-signing.keychain-db"
-          security list-keychain -d user -s "$RUNNER_TEMP/cli-signing.keychain-db"
-      - name: Sign and notarize macOS executable
-        if: startsWith(matrix.target, 'darwin-')
-        shell: bash
-        env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
         run: |
           set -euo pipefail
+          for name in APPLE_CERTIFICATE_BASE64 APPLE_CERTIFICATE_PASSWORD APPLE_TEAM_ID APPLE_ID APPLE_APP_SPECIFIC_PASSWORD; do
+            if test -z "${!name}"; then
+              echo "Missing GitHub Actions secret: $name" >&2
+              exit 1
+            fi
+          done
+      - name: Calculate release version
+        id: version
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          npm version "$BUMP" --no-git-tag-version --ignore-scripts
+          version=$(node -p 'require("./package.json").version')
+          tag="v$version"
+          if git ls-remote --exit-code origin "refs/tags/$tag" >/dev/null; then
+            echo "Release tag $tag already exists" >&2
+            exit 1
+          fi
+          echo "base_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: '["self-hosted","macOS","ARM64"]'
+            target: darwin-arm64
+          - runner: '["self-hosted","macOS","X64"]'
+            target: darwin-x64
+    runs-on: ${{ fromJSON(matrix.runner) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.base_sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.20.0
+          cache: npm
+      - name: Set release version
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          npm version "$RELEASE_VERSION" --no-git-tag-version --ignore-scripts
+          node scripts/check-release-version.mjs
+      - name: Install dependencies
+        run: npm ci
+      - name: Validate CLI
+        run: npm run check
+      - name: Build executable
+        run: npm run build:sea
+      - name: Sign and notarize macOS executable
+        shell: bash
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          set -euo pipefail
+          certificate="$RUNNER_TEMP/cli-signing.p12"
+          keychain="$RUNNER_TEMP/cli-signing.keychain-db"
+          trap 'security delete-keychain "$keychain" >/dev/null 2>&1 || true; rm -f "$certificate"' EXIT
+          test -n "$APPLE_CERTIFICATE_BASE64"
+          test -n "$APPLE_CERTIFICATE_PASSWORD"
           test -n "$APPLE_TEAM_ID"
           test -n "$APPLE_ID"
           test -n "$APPLE_APP_SPECIFIC_PASSWORD"
-          identity=$(security find-identity -v -p codesigning | grep "Developer ID Application:.*($APPLE_TEAM_ID)" | head -1 | awk '{ print $2 }')
+          printf '%s' "$APPLE_CERTIFICATE_BASE64" | base64 -D -o "$certificate"
+          security create-keychain -p "$APPLE_CERTIFICATE_PASSWORD" "$keychain"
+          security unlock-keychain -p "$APPLE_CERTIFICATE_PASSWORD" "$keychain"
+          security import "$certificate" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          identity=$(security find-identity -v -p codesigning "$keychain" | grep "Developer ID Application:.*($APPLE_TEAM_ID)" | head -1 | awk '{ print $2 }')
           test -n "$identity"
-          codesign --force --options runtime --timestamp --sign "$identity" dist/extrabrain
+          codesign --force --options runtime --timestamp --sign "$identity" --keychain "$keychain" dist/extrabrain
           codesign --verify --strict --verbose=2 dist/extrabrain
           ditto -c -k --keepParent dist/extrabrain "$RUNNER_TEMP/extrabrain-notary.zip"
           xcrun notarytool submit "$RUNNER_TEMP/extrabrain-notary.zip" --apple-id "$APPLE_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait --output-format json > "$RUNNER_TEMP/notary-result.json"
           jq -e '.status == "Accepted"' "$RUNNER_TEMP/notary-result.json"
-      - name: Verify and archive Unix executable
-        if: matrix.target != 'win32-x64'
+      - name: Verify and archive macOS executable
         shell: bash
         env:
-          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
           TARGET: ${{ matrix.target }}
         run: |
           set -euo pipefail
@@ -104,44 +143,52 @@ jobs:
           test "$code" = 3
           echo "$result" | jq -e '.code == 3 and .message == "ExtraBrain is not running"'
           tar -czf "extrabrain-$RELEASE_TAG-$TARGET.tar.gz" -C dist extrabrain
-      - name: Verify and archive Windows executable
-        if: matrix.target == 'win32-x64'
-        shell: pwsh
-        env:
-          RELEASE_TAG: ${{ inputs.tag }}
-          TARGET: ${{ matrix.target }}
-        run: |
-          $PSNativeCommandUseErrorActionPreference = $false
-          $actualVersion = & dist/extrabrain.exe --version
-          if ($LASTEXITCODE -ne 0 -or $actualVersion -ne $env:RELEASE_TAG.Substring(1)) { throw 'Version mismatch' }
-          $output = & dist/extrabrain.exe --json capabilities
-          $exitCode = $LASTEXITCODE
-          $result = $output | ConvertFrom-Json
-          if ($exitCode -ne 3 -or $result.code -ne 3) { throw 'Capabilities contract failed' }
-          Compress-Archive -LiteralPath dist/extrabrain.exe -DestinationPath "extrabrain-$env:RELEASE_TAG-$env:TARGET.zip"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.target }}
-          path: extrabrain-${{ inputs.tag }}-${{ matrix.target }}.*
+          path: extrabrain-${{ needs.prepare.outputs.tag }}-${{ matrix.target }}.*
           if-no-files-found: error
 
   publish:
-    needs: build
-    runs-on: ubuntu-24.04
+    needs: [prepare, build]
+    runs-on: [self-hosted, macOS, ARM64]
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.base_sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.20.0
+          cache: npm
       - uses: actions/download-artifact@v4
         with:
           path: release-assets
           merge-multiple: true
+      - name: Commit and tag release version
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          npm version "$RELEASE_VERSION" --no-git-tag-version --ignore-scripts
+          node scripts/check-release-version.mjs
+          git config --local user.name 'ExtraBrain Developer'
+          git config --local user.email 'developer@extrabrain.app'
+          git config --local user.useConfigOnly true
+          test "$(git config --local --get user.name)" = 'ExtraBrain Developer'
+          test "$(git config --local --get user.email)" = 'developer@extrabrain.app'
+          git add package.json package-lock.json
+          git commit -m "Release $RELEASE_TAG"
+          git tag "$RELEASE_TAG"
+          git push --atomic origin HEAD:main "refs/tags/$RELEASE_TAG"
       - name: Write checksum manifest and publish
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           set -euo pipefail
           cd release-assets
-          sha256sum extrabrain-* > SHA256SUMS
+          shasum -a 256 extrabrain-* > SHA256SUMS
           gh release create "$RELEASE_TAG" extrabrain-* SHA256SUMS --title "$RELEASE_TAG" --generate-notes --verify-tag

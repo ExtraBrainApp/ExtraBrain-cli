@@ -7,12 +7,11 @@ install_dir=${EXTRABRAIN_INSTALL_DIR:-"$HOME/.local/bin"}
 
 case "$(uname -s)" in
   Darwin) platform=darwin ;;
-  Linux) platform=linux ;;
   *) echo 'Unsupported operating system' >&2; exit 1 ;;
 esac
 case "$(uname -m)" in
-  arm64|aarch64) arch=arm64 ;;
-  x86_64|amd64) arch=x64 ;;
+  arm64) arch=arm64 ;;
+  x86_64) arch=x64 ;;
   *) echo 'Unsupported architecture' >&2; exit 1 ;;
 esac
 

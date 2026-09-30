@@ -4,9 +4,9 @@
 
 ## Install
 
-Supported release targets are macOS arm64 and x64, Linux arm64 and x64, and Windows x64. macOS releases are signed and notarized. Downloaded archives are checked against the release's `SHA256SUMS` before an existing executable is replaced.
+Supported release targets are macOS arm64 and x64. Releases are signed and notarized. Downloaded archives are checked against the release's `SHA256SUMS` before an existing executable is replaced.
 
-macOS and Linux:
+macOS:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/ExtraBrainApp/ExtraBrain-cli/main/install.sh | sh
@@ -14,18 +14,11 @@ export PATH="$HOME/.local/bin:$PATH"
 extrabrain --version
 ```
 
-Windows PowerShell:
+The installer needs no administrator privileges. It uses `curl`, `tar`, and `shasum` or `sha256sum`.
 
-```powershell
-irm https://raw.githubusercontent.com/ExtraBrainApp/ExtraBrain-cli/main/install.ps1 | iex
-extrabrain --version
-```
+Install a particular stable release with `EXTRABRAIN_VERSION=v0.1.1` in the installer environment. The default is the latest stable GitHub release. Release tags use `vMAJOR.MINOR.PATCH`; CLI and app API versions are independent. An installed executable stays at its installed version during document commands. Run `extrabrain update` or rerun the installer to update it explicitly. `extrabrain --version` reports the installed version.
 
-The Windows installer adds `%LOCALAPPDATA%\ExtraBrain\bin` to the current session and user `PATH`. Open a new shell if a previous session still resolves an older command. Neither installer needs administrator privileges. They use `curl`, `tar`, and `shasum` or `sha256sum` on macOS/Linux, or PowerShell 5.1 or newer on Windows. Linux pairing also needs a running Secret Service and `secret-tool`.
-
-Install a particular stable release with `EXTRABRAIN_VERSION=v0.1.0` in the installer environment. The default is the latest stable GitHub release. Release tags use `vMAJOR.MINOR.PATCH`; CLI and app API versions are independent. An installed executable stays at its installed version during document commands. Run `extrabrain update` or rerun the installer to update it explicitly. `extrabrain --version` reports the installed version. On Windows, `update` schedules verified replacement immediately after the running CLI exits; check `--version` in a new command.
-
-To uninstall, remove only `~/.local/bin/extrabrain` on macOS/Linux or `%LOCALAPPDATA%\ExtraBrain\bin\extrabrain.exe` on Windows. Removing the command leaves ExtraBrain application data, imported documents, and import resume manifests intact. Revoke the CLI's pairing in the app if access should end.
+To uninstall, remove only `~/.local/bin/extrabrain`. Removing the command leaves ExtraBrain application data, imported documents, and import resume manifests intact. Revoke the CLI's pairing in the app if access should end.
 
 ## App compatibility
 
@@ -40,7 +33,7 @@ The CLI has no distribution-channel check. A Mac App Store app will work when it
 
 ## Agent workflow
 
-The app must be running and its document automation listener enabled. Approve the pairing request in the app. Pairing stores the credential in macOS Keychain, Linux Secret Service, or a Windows current-user DPAPI protected file. There is no plaintext fallback. Pairing defaults to `documents.metadata.read` and `documents.import`.
+The app must be running and its document automation listener enabled. Approve the pairing request in the app. Pairing stores the credential in macOS Keychain. There is no plaintext fallback. Pairing defaults to `documents.metadata.read` and `documents.import`.
 
 ```sh
 extrabrain --json capabilities
@@ -75,6 +68,10 @@ JSON commands return `{ "code": number, "data": object | null, "message": string
 ## Develop
 
 Use Node 24.20.0 and npm 11.19.0 to build from source. `npm ci`, `npm run typecheck`, and `npm test` validate the CLI. `npm run build:sea` creates a self-contained executable for the host platform in `dist/`. Source and direct tests were extracted from ExtraBrain PR #985. The app owns the local API, approval flow, ingestion, and persistence; this repository owns only the CLI.
+
+## Release
+
+Run the `Standalone CLI release` workflow on `main` and choose `patch`, `minor`, or `major`. The workflow increments the version in `package.json` and `package-lock.json`, builds signed and notarized macOS arm64 and x64 archives, then commits the new version, creates its tag, and publishes the archives with `SHA256SUMS`. The CLI reads its version from `package.json`, so there is no separate version to edit.
 
 ## License
 
