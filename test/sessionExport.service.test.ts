@@ -189,30 +189,28 @@ describe('session exports', () => {
   })
 
   it('streams analysis content larger than the JSON get bound', async () => {
-    const longText = 'x'.repeat(16 * 1024 * 1024 + 1)
+    const text = 'x'.repeat(100000)
+    const recordCount = 170
     const { service, directory } = await fixture((request, response) => {
       const url = new URL(request.url ?? '', 'http://fixture')
       if (url.pathname === '/api/v1/sessions/s1/analyses/big') {
-        reply(response, { schemaVersion: 'v1', sessionId: 's1', analysisId: 'big', snapshot: 'rev-1', analysis: { request: 'Why?', result: 'Because' }, provenance: { status: 'complete', missing: [] }, parts: [{ id: 'input', role: 'model-input', totalCount: 1 }], assets: [] })
+        reply(response, { schemaVersion: 'v1', sessionId: 's1', analysisId: 'big', snapshot: 'rev-1', analysis: { request: 'Why?', result: 'Because' }, provenance: { status: 'complete', missing: [] }, parts: [{ id: 'input', role: 'model-input', totalCount: recordCount }], assets: [] })
         return true
       }
       if (url.pathname.endsWith('/parts/input')) {
-        reply(response, { items: [{ contentRef: { contentId: 'huge', totalChars: longText.length } }], totalCount: 1, nextCursor: null, snapshot: 'rev-1' })
-        return true
-      }
-      if (url.pathname.endsWith('/content/huge')) {
-        const offset = Number(url.searchParams.get('offset'))
-        const chunk = longText.slice(offset, offset + 100000)
-        const nextOffset = offset + chunk.length
-        reply(response, { contentId: 'huge', text: chunk, offset, nextOffset: nextOffset < longText.length ? nextOffset : null, totalChars: longText.length, snapshot: 'rev-1' })
+        const offset = Number(url.searchParams.get('cursor') ?? 0)
+        const items = Array.from({ length: Math.min(50, recordCount - offset) }, (_, index) => ({ id: `input-${offset + index}`, text }))
+        const nextOffset = offset + items.length
+        reply(response, { items, totalCount: recordCount, nextCursor: nextOffset < recordCount ? String(nextOffset) : null, snapshot: 'rev-1' })
         return true
       }
       return false
     })
     const output = join(directory, 'big-analysis')
     const manifest = await service.exportAnalysis(output, 's1', 'big')
-    const contentPath = Object.values(manifest.content as Record<string, { file: string }>)[0].file
-    expect((await readFile(join(output, contentPath))).length).toBe(longText.length)
+    const partPath = (manifest.parts as Array<{ file: string }>)[0].file
+    expect((await readFile(join(output, partPath))).length).toBeGreaterThan(16 * 1024 * 1024)
+    expect((manifest.parts as Array<{ fetched: number }>)[0].fetched).toBe(recordCount)
     expect(manifest.retrieval).toEqual({ complete: true })
   })
 
