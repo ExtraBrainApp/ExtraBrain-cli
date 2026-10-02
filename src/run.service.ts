@@ -36,6 +36,9 @@ Commands:
   sessions content --snapshot <snapshot> [--offset <n>] [--max-chars <n>] <session-id> <content-id>
   sessions analyses list [page flags] <session-id>
   sessions analyses get <session-id> <analysis-id>
+  sessions export --output <new-directory> <session-id>
+  sessions screenshot export --output <new-file> [--representation <name>] <session-id> <screenshot-id>
+  sessions analyses export --output <new-directory> <session-id> <analysis-id>
   update
   --version
 
@@ -68,7 +71,8 @@ const VALUE_FLAGS = new Set([
   'cursor',
   'since',
   'until',
-  'snapshot'
+  'snapshot',
+  'representation'
 ])
 
 const setFlag = (flags: Map<string, string | true>, name: string, value: string | true): void => {
@@ -226,7 +230,7 @@ const mapError = (error: unknown): CliResult => {
       message: `${message}. Pair the CLI again if its credential was revoked.`
     }
   }
-  if (['NOT_FOUND', 'ORIGINAL_UNAVAILABLE', 'TEXT_UNAVAILABLE', 'UNSUPPORTED_API_VERSION', 'UNSUPPORTED_CAPABILITY'].includes(error.code)) {
+  if (['NOT_FOUND', 'ORIGINAL_UNAVAILABLE', 'TEXT_UNAVAILABLE', 'REPRESENTATION_UNAVAILABLE', 'UNSUPPORTED_API_VERSION', 'UNSUPPORTED_CAPABILITY'].includes(error.code)) {
     return { code: CliExitCode.UNSUPPORTED, data: { error: error.code }, message }
   }
   if (error.status === 409) {

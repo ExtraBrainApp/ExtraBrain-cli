@@ -1,15 +1,18 @@
 import { CliApiError, type DocumentApiClient } from './apiClient.service'
 import { requireSessionCapabilities } from './protocol'
 import { SESSION_COLLECTIONS, SessionDataService, type SessionCollection } from './sessionData.service'
+import { SessionExportService } from './sessionExport.service'
 import { CliExitCode, type CliResult, type ParsedArguments, type SessionCapability } from './types'
 
 interface SessionRequest {
-  action: 'list' | 'search' | 'current' | 'get' | 'collection' | 'content' | 'analyses-list' | 'analyses-get'
+  action: 'list' | 'search' | 'current' | 'get' | 'collection' | 'content' | 'analyses-list' | 'analyses-get' | 'session-export' | 'analysis-export' | 'screenshot-export'
   capabilities: SessionCapability[]
   sessionId?: string
   analysisId?: string
   collection?: SessionCollection
   query?: string
+  output?: string
+  representation?: string
   options: { limit?: number; cursor?: string; since?: number; until?: number; snapshot?: string; offset?: number; maxChars?: number }
 }
 
@@ -41,6 +44,8 @@ export const parseSessionCommand = (parsed: ParsedArguments): SessionRequest => 
   let analysisId: string | undefined
   let collection: SessionCollection | undefined
   let query: string | undefined
+  let output: string | undefined
+  let representation: string | undefined
   if (noun === 'list' || noun === 'search') {
     action = noun
     capabilities = [noun === 'list' ? 'sessionMetadata' : 'sessionSearch']
@@ -62,7 +67,15 @@ export const parseSessionCommand = (parsed: ParsedArguments): SessionRequest => 
       action = 'analyses-list'; capabilities = ['analysisData']; allowed = ['limit', 'cursor']; exact(args, 1); sessionId = args[0]
     } else if (verb === 'get') {
       action = 'analyses-get'; capabilities = ['analysisData']; exact(args, 2); sessionId = args[0]; analysisId = args[1]
+    } else if (verb === 'export') {
+      action = 'analysis-export'; capabilities = ['analysisData', 'screenshotExport']; allowed = ['output']; exact(args, 2); sessionId = args[0]; analysisId = args[1]
     } else usage('Unknown sessions analyses command')
+  } else if (noun === 'export') {
+    action = 'session-export'; capabilities = ['sessionMetadata', 'sessionData', 'analysisData', 'screenshotExport']; allowed = ['output']; exact(rest, 1); sessionId = rest[0]
+  } else if (noun === 'screenshot') {
+    const [verb, ...args] = rest
+    if (verb !== 'export') usage('Unknown sessions screenshot command')
+    action = 'screenshot-export'; capabilities = ['sessionMetadata', 'sessionData', 'screenshotExport']; allowed = ['output', 'representation']; exact(args, 2); sessionId = args[0]; analysisId = args[1]
   } else usage('Unknown sessions command')
   if (!action) usage('Unknown sessions command')
   for (const key of parsed.flags.keys()) {
@@ -79,11 +92,18 @@ export const parseSessionCommand = (parsed: ParsedArguments): SessionRequest => 
   }
   if (options.since !== undefined && options.until !== undefined && options.since > options.until) usage('--since must be at or before --until')
   if (action === 'content' && !options.snapshot) usage('--snapshot is required')
-  return { action: action as SessionRequest['action'], capabilities, sessionId, analysisId, collection, query, options }
+  if (action === 'session-export' || action === 'analysis-export' || action === 'screenshot-export') {
+    output = valueFlag(parsed.flags.get('output'), 'output')
+    if (!output) usage('--output is required')
+    representation = valueFlag(parsed.flags.get('representation'), 'representation')
+  }
+  return { action: action as SessionRequest['action'], capabilities, sessionId, analysisId, collection, query, output, representation, options }
 }
 
 const messageFor = (request: SessionRequest, data: Record<string, unknown>): string => {
   if (request.action === 'current') return data.activeSessionId === null ? 'No active session.' : `Active session: ${data.activeSessionId}`
+  if (request.action === 'session-export' || request.action === 'analysis-export') return `Export complete at ${request.output}; snapshot ${data.snapshot}; retrieval complete.`
+  if (request.action === 'screenshot-export') return `Screenshot ${data.screenshotId} exported to ${request.output}; ${data.representation}, ${data.byteLength} bytes.`
   if ('items' in data) return `${request.action}: ${(data.items as unknown[]).length}/${data.totalCount} records; snapshot ${data.snapshot}; next cursor ${data.nextCursor ?? 'none'}.`
   if (request.action === 'analyses-get') {
     const provenance = data.provenance as Record<string, unknown>
@@ -98,7 +118,10 @@ export const executeSessionCommand = async (request: SessionRequest, client: Doc
   const service = new SessionDataService(client)
   const { action, options, sessionId, analysisId } = request
   let data: Record<string, unknown>
-  if (action === 'list') data = await service.list(options)
+  if (action === 'session-export') data = await new SessionExportService(client).exportSession(request.output!, sessionId!)
+  else if (action === 'analysis-export') data = await new SessionExportService(client).exportAnalysis(request.output!, sessionId!, analysisId!)
+  else if (action === 'screenshot-export') data = await new SessionExportService(client).exportScreenshot(request.output!, sessionId!, analysisId!, request.representation)
+  else if (action === 'list') data = await service.list(options)
   else if (action === 'search') data = await service.search(request.query!, options)
   else if (action === 'current') data = await service.current()
   else if (action === 'get') data = await service.get(sessionId!)

@@ -83,7 +83,7 @@ export class DocumentApiClient {
     authenticated = true
   ): Promise<Response> {
     const headers = new Headers(init.headers)
-    headers.set('accept', 'application/json')
+    if (!headers.has('accept')) headers.set('accept', 'application/json')
     if (authenticated) {
       if (!this.credential) throw new CliApiError('PAIRING_REQUIRED', 'Pair the CLI first')
       headers.set('authorization', `Bearer ${this.credential}`)
@@ -98,6 +98,9 @@ export class DocumentApiClient {
       throw await toFailedResponseError(response)
     } catch (error) {
       if (error instanceof CliApiError) throw error
+      if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
+        throw new CliApiError('REQUEST_TIMEOUT', 'ExtraBrain request timed out')
+      }
       throw new CliApiError('APP_NOT_RUNNING', 'ExtraBrain is not running')
     }
   }
@@ -117,6 +120,15 @@ export class DocumentApiClient {
 
   discovery(): Promise<Record<string, unknown>> {
     return this.json('/.well-known/extrabrain', {}, false)
+  }
+
+  sessionAsset(sessionId: string, screenshotId: string, representation: string, snapshot: string): Promise<Response> {
+    const query = new URLSearchParams({ representation, snapshot })
+    return this.send(
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/screenshots/${encodeURIComponent(screenshotId)}/image?${query}`,
+      { method: 'GET', headers: { accept: 'image/*' }, signal: AbortSignal.timeout(30000) },
+      false
+    )
   }
 
   pair(input: {
