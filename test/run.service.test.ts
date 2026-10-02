@@ -390,3 +390,82 @@ describe('ExtraBrain CLI contract', () => {
     expect(uploads).toBe(2)
   })
 })
+
+describe('session commands', () => {
+  const discovery = {
+    apiVersion: 'v1', sessionApiVersion: 'v1', available: true,
+    capabilities: { sessionMetadata: true, sessionSearch: true, sessionCurrent: true, sessionData: true, analysisData: true, screenshotExport: true, futureCapability: true }
+  }
+
+  it.each([
+    ['list', ['sessions', 'list'], '/api/v1/sessions?limit=50'],
+    ['search', ['sessions', 'search', '--since', '1', '--until', '2', '話'], '/api/v1/sessions/search?limit=50&since=1&until=2&q=%E8%A9%B1'],
+    ['collection', ['sessions', 'transcripts', 'a/b'], '/api/v1/sessions/a%2Fb/transcripts?limit=50'],
+    ['analyses', ['sessions', 'analyses', 'list', 'a/b'], '/api/v1/sessions/a%2Fb/analyses?limit=50']
+  ])('routes %s without credentials', async (_name, command, path) => {
+    const json = vi.fn(async (_path: string) => ({ items: [], totalCount: 0, nextCursor: null, snapshot: 'rev-1' }))
+    const harness = await createHarness({ discovery: vi.fn(async () => discovery), json }, { status: 'failed' })
+    await expect(runCli(['--json', ...command], harness.dependencies)).resolves.toBe(CliExitCode.SUCCESS)
+    expect(json).toHaveBeenCalledWith(path, { method: 'GET' }, false)
+    expect(harness.dependencies.credentialStore.read).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['sessions', 'current'], ['sessions', 'get', 'a/b'], ['sessions', 'content', '--snapshot', 'rev-1', 'a/b', 'c 1'], ['sessions', 'analyses', 'get', 'a/b', 'analysis']
+  ])('reads %s without pairing or credential storage', async (...command) => {
+    const json = vi.fn(async (path: string) => {
+      if (path.endsWith('/current')) return { activeSessionId: null, state: 'idle', coverage: { kind: 'live' } }
+      if (path.includes('/content/')) return { contentId: 'c 1', text: '', offset: 0, nextOffset: null, totalChars: 0, snapshot: 'rev-1' }
+      if (path.includes('/analyses/')) return { schemaVersion: 'v1', sessionId: 'a/b', analysisId: 'analysis', snapshot: 'rev-1', analysis: { request: 'Why?', result: 'Because' }, provenance: { status: 'complete', missing: [] }, parts: [], assets: [] }
+      return { sessionId: 'a/b', snapshot: 'rev-1', counts: {}, summary: 'saved' }
+    })
+    const harness = await createHarness({ discovery: vi.fn(async () => discovery), json, pair: vi.fn() }, { status: 'failed' })
+    await expect(runCli(['--json', ...command], harness.dependencies)).resolves.toBe(CliExitCode.SUCCESS)
+    expect(harness.dependencies.credentialStore.read).not.toHaveBeenCalled()
+    expect(json).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    ['sessions'], ['sessions', 'unknown'], ['sessions', 'list', 'extra'], ['sessions', 'current', 'extra'],
+    ['sessions', 'get'], ['sessions', 'analyses', 'get', 's'], ['sessions', 'analyses', 'unknown', 's'],
+    ['sessions', 'list', '--bad'], ['sessions', 'list', '--limit', '0'], ['sessions', 'list', '--limit', '201'],
+    ['sessions', 'list', '--since', '3', '--until', '2'], ['sessions', 'list', '--since', '1.2'],
+    ['sessions', 'content', 's', 'c'], ['sessions', 'content', '--snapshot', 'rev', '--offset', '-1', 's', 'c'],
+    ['sessions', 'content', '--snapshot', 'rev', '--max-chars', '0', 's', 'c'],
+    ['sessions', 'get', '--limit', '2', 's'], ['sessions', 'transcripts', 's', 'extra']
+  ])('rejects invalid syntax before discovery: %s', async (...command) => {
+    const discover = vi.fn(async () => discovery)
+    const json = vi.fn()
+    const harness = await createHarness({ discovery: discover, json })
+    await expect(runCli(['--json', ...command], harness.dependencies)).resolves.toBe(CliExitCode.USAGE)
+    expect(discover).not.toHaveBeenCalled()
+    expect(json).not.toHaveBeenCalled()
+  })
+
+  it('rejects missing operation capability and unsupported session version before data', async () => {
+    for (const value of [{ ...discovery, sessionApiVersion: 'v2' }, { ...discovery, capabilities: { sessionMetadata: false } }]) {
+      const json = vi.fn()
+      const harness = await createHarness({ discovery: vi.fn(async () => value), json })
+      await expect(runCli(['sessions', 'list'], harness.dependencies)).resolves.toBe(CliExitCode.UNSUPPORTED)
+      expect(json).not.toHaveBeenCalled()
+    }
+  })
+
+  it('preserves search filters and opaque cursor through continuation', async () => {
+    const json = vi.fn(async (_path: string) => ({ items: [], totalCount: 0, nextCursor: null, snapshot: 'rev-1' }))
+    const harness = await createHarness({ discovery: vi.fn(async () => discovery), json })
+    await expect(runCli(['--json', 'sessions', 'search', '--limit', '10', '--cursor', '次+1', '--since', '100', '--until', '101', '話'], harness.dependencies)).resolves.toBe(CliExitCode.SUCCESS)
+    const path = vi.mocked(json).mock.calls[0][0]
+    const url = new URL(path, 'http://fixture')
+    expect(url.pathname).toBe('/api/v1/sessions/search')
+    expect(Object.fromEntries(url.searchParams)).toEqual({ limit: '10', cursor: '次+1', since: '100', until: '101', q: '話' })
+  })
+
+  it('maps snapshot conflicts and invalid responses distinctly from usage', async () => {
+    const conflict = await createHarness({ discovery: vi.fn(async () => discovery), json: vi.fn(async () => { throw new CliApiError('SNAPSHOT_CONFLICT', 'Restart traversal', 409) }) })
+    await expect(runCli(['--json', 'sessions', 'list'], conflict.dependencies)).resolves.toBe(CliExitCode.CONFLICT)
+    const invalid = await createHarness({ discovery: vi.fn(async () => discovery), json: vi.fn(async () => ({ items: [], totalCount: -1, nextCursor: null, snapshot: 'rev' })) })
+    await expect(runCli(['--json', 'sessions', 'list'], invalid.dependencies)).resolves.toBe(CliExitCode.FAILURE)
+    expect(invalid.written[0]).toContain('INVALID_RESPONSE')
+  })
+})

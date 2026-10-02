@@ -76,3 +76,75 @@ describe('versioned app API fixture', () => {
     expect(output[1]).not.toContain(source)
   })
 })
+
+describe('session HTTP fixture', () => {
+  it('uses loopback port override, scoped routes, and no Authorization header', async () => {
+    const requests: Array<{ path: string; authorization: string | undefined }> = []
+    const server = createServer((request, response) => {
+      const path = request.url ?? ''
+      requests.push({ path, authorization: request.headers.authorization })
+      if (path === '/.well-known/extrabrain') {
+        reply(response, 200, { apiVersion: 'v1', sessionApiVersion: 'v1', capabilities: { sessionMetadata: true, sessionSearch: true, sessionCurrent: true, sessionData: true, analysisData: true } })
+      } else if (path.startsWith('/api/v1/sessions/search?') || path.startsWith('/api/v1/sessions?')) {
+        reply(response, 200, { items: [], totalCount: 0, nextCursor: null, snapshot: 'rev-1' })
+      } else if (path === '/api/v1/sessions/current') {
+        reply(response, 200, { activeSessionId: null, state: 'idle', coverage: { kind: 'live' } })
+      } else if (path.startsWith('/api/v1/sessions/s%2F1/content/')) {
+        reply(response, 200, { contentId: 'c 1', text: '話', offset: 0, nextOffset: null, totalChars: 1, snapshot: 'rev-1' })
+      } else if (path.startsWith('/api/v1/sessions/s%2F1/analyses/a%201')) {
+        reply(response, 200, { schemaVersion: 'v1', sessionId: 's/1', analysisId: 'a 1', snapshot: 'rev-1', analysis: { request: 'Why?', result: 'Because' }, provenance: { status: 'complete', missing: [] }, parts: [], assets: [] })
+      } else if (path.startsWith('/api/v1/sessions/s%2F1/analyses?')) {
+        reply(response, 200, { items: [], totalCount: 0, nextCursor: null, snapshot: 'rev-1' })
+      } else if (path.startsWith('/api/v1/sessions/s%2F1/transcripts')) {
+        reply(response, 200, { items: [{ id: 't1', text: 'um', source: 'microphone' }], totalCount: 1, nextCursor: null, snapshot: 'rev-1' })
+      } else if (/\/(screenshots|facts|topics|questions|chat-turns|insights)\?/.test(path)) {
+        reply(response, 200, { items: [], totalCount: 0, nextCursor: null, snapshot: 'rev-1' })
+      } else if (path.startsWith('/api/v1/sessions/s%2F1')) {
+        reply(response, 200, { sessionId: 's/1', snapshot: 'rev-1', summary: 'saved', counts: { transcripts: 1 } })
+      } else reply(response, 404, { error: { code: 'NOT_FOUND', message: 'Unknown route' } })
+    })
+    servers.push(server)
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('Fixture address is invalid')
+    const oldPort = process.env.EXTRABRAIN_PORT
+    process.env.EXTRABRAIN_PORT = String(address.port)
+    try {
+      const directory = await mkdtemp(join(tmpdir(), 'extrabrain-session-'))
+      directories.push(directory)
+      const output: string[] = []
+      const dependencies = {
+        apiFactory: (credential: string | null) => new DocumentApiClient(credential),
+        credentialStore: { read: () => { throw new Error('credential read') }, write: () => { throw new Error('pairing') }, clear: () => {} },
+        output: { write: (value: string) => output.push(value), error: () => {} },
+        resumeStore: new ResumeStore(join(directory, 'state'))
+      }
+      const commands = [
+        ['sessions', 'get', 's/1'],
+        ['sessions', 'transcripts', '--cursor', 'opaque+cursor', 's/1'],
+        ['sessions', 'content', '--snapshot', 'rev-1', 's/1', 'c 1'],
+        ['sessions', 'analyses', 'get', 's/1', 'a 1']
+      ]
+      for (const command of commands) await expect(runCli(['--json', ...command], dependencies)).resolves.toBe(0)
+      expect(requests.filter((entry) => entry.path !== '/.well-known/extrabrain').map((entry) => entry.path)).toEqual([
+        '/api/v1/sessions/s%2F1',
+        '/api/v1/sessions/s%2F1/transcripts?limit=50&cursor=opaque%2Bcursor',
+        '/api/v1/sessions/s%2F1/content/c%201?snapshot=rev-1&offset=0&maxChars=10000',
+        '/api/v1/sessions/s%2F1/analyses/a%201'
+      ])
+      expect(requests.every((entry) => entry.authorization === undefined)).toBe(true)
+      expect(output[2]).toContain('話')
+      const documented = [
+        ['sessions', 'list', '--limit', '50', '--since', '1760000000', '--until', '1760100000'],
+        ['sessions', 'search', '--limit', '50', 'release risks'],
+        ['sessions', 'current'],
+        ...['screenshots', 'facts', 'topics', 'questions', 'chat-turns', 'insights'].map((collection) => ['sessions', collection, 's/1']),
+        ['sessions', 'analyses', 'list', 's/1']
+      ]
+      for (const command of documented) await expect(runCli(['--json', ...command], dependencies)).resolves.toBe(0)
+    } finally {
+      if (oldPort === undefined) delete process.env.EXTRABRAIN_PORT
+      else process.env.EXTRABRAIN_PORT = oldPort
+    }
+  })
+})

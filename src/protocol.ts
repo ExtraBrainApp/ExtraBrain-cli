@@ -1,4 +1,5 @@
 import { CliApiError } from './apiClient.service'
+import type { SessionCapability } from './types'
 
 export type DocumentCapability =
   | 'documentImport'
@@ -37,4 +38,22 @@ export const requiredDocumentCapabilities = (action: string | undefined): Docume
   if (action === 'export') return ['originalExport']
   if (action === 'delete') return ['revisionSafeDelete']
   return []
+}
+
+export const requireSessionCapabilities = (
+  discovery: Record<string, unknown>,
+  required: readonly SessionCapability[]
+): void => {
+  if (discovery.apiVersion !== 'v1' || discovery.sessionApiVersion !== 'v1') {
+    throw new CliApiError('UNSUPPORTED_API_VERSION', 'ExtraBrain session API v1 is required')
+  }
+  const capabilities = discovery.capabilities
+  if (!capabilities || typeof capabilities !== 'object' || Array.isArray(capabilities)) {
+    throw new CliApiError('UNSUPPORTED_CAPABILITY', 'ExtraBrain did not advertise session capabilities')
+  }
+  for (const capability of required) {
+    if ((capabilities as Record<string, unknown>)[capability] !== true) {
+      throw new CliApiError('UNSUPPORTED_CAPABILITY', `ExtraBrain does not support ${capability}`)
+    }
+  }
 }
