@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -80,27 +81,34 @@ describe('versioned app API fixture', () => {
 describe('session HTTP fixture', () => {
   it('uses loopback port override, scoped routes, and no Authorization header', async () => {
     const requests: Array<{ path: string; authorization: string | undefined }> = []
+    const image = Buffer.from([0, 255, 1])
+    const imageHash = createHash('sha256').update(image).digest('hex')
     const server = createServer((request, response) => {
       const path = request.url ?? ''
       requests.push({ path, authorization: request.headers.authorization })
       if (path === '/.well-known/extrabrain') {
-        reply(response, 200, { apiVersion: 'v1', sessionApiVersion: 'v1', capabilities: { sessionMetadata: true, sessionSearch: true, sessionCurrent: true, sessionData: true, analysisData: true } })
+        reply(response, 200, { apiVersion: 'v1', sessionApiVersion: 'v1', capabilities: { sessionMetadata: true, sessionSearch: true, sessionCurrent: true, sessionData: true, analysisData: true, screenshotExport: true } })
       } else if (path.startsWith('/api/v1/sessions/search?') || path.startsWith('/api/v1/sessions?')) {
         reply(response, 200, { items: [], totalCount: 0, nextCursor: null, snapshot: 'rev-1' })
       } else if (path === '/api/v1/sessions/current') {
         reply(response, 200, { activeSessionId: null, state: 'idle', coverage: { kind: 'live' } })
       } else if (path.startsWith('/api/v1/sessions/s%2F1/content/')) {
         reply(response, 200, { contentId: 'c 1', text: '話', offset: 0, nextOffset: null, totalChars: 1, snapshot: 'rev-1' })
+      } else if (path.startsWith('/api/v1/sessions/s%2F1/screenshots/shot1/image?')) {
+        response.writeHead(200, { 'content-type': path.includes('representation=original') ? 'image/png' : 'image/jpeg' })
+        response.end(image)
       } else if (path.startsWith('/api/v1/sessions/s%2F1/analyses/a%201')) {
         reply(response, 200, { schemaVersion: 'v1', sessionId: 's/1', analysisId: 'a 1', snapshot: 'rev-1', analysis: { request: 'Why?', result: 'Because' }, provenance: { status: 'complete', missing: [] }, parts: [], assets: [] })
       } else if (path.startsWith('/api/v1/sessions/s%2F1/analyses?')) {
-        reply(response, 200, { items: [], totalCount: 0, nextCursor: null, snapshot: 'rev-1' })
+        reply(response, 200, { items: [{ analysisId: 'a 1' }], totalCount: 1, nextCursor: null, snapshot: 'rev-1' })
       } else if (path.startsWith('/api/v1/sessions/s%2F1/transcripts')) {
         reply(response, 200, { items: [{ id: 't1', text: 'um', source: 'microphone' }], totalCount: 1, nextCursor: null, snapshot: 'rev-1' })
+      } else if (path.startsWith('/api/v1/sessions/s%2F1/screenshots?')) {
+        reply(response, 200, { items: [{ id: 'shot1', defaultRepresentation: 'analysis-jpeg', representations: [{ representation: 'analysis-jpeg', mediaType: 'image/jpeg', byteLength: image.length, sha256: imageHash, available: true }, { representation: 'original', mediaType: 'image/png', byteLength: image.length, sha256: imageHash, available: true }] }], totalCount: 1, nextCursor: null, snapshot: 'rev-1' })
       } else if (/\/(screenshots|facts|topics|questions|chat-turns|insights)\?/.test(path)) {
         reply(response, 200, { items: [], totalCount: 0, nextCursor: null, snapshot: 'rev-1' })
       } else if (path.startsWith('/api/v1/sessions/s%2F1')) {
-        reply(response, 200, { sessionId: 's/1', snapshot: 'rev-1', summary: 'saved', counts: { transcripts: 1 } })
+        reply(response, 200, { sessionId: 's/1', snapshot: 'rev-1', summary: 'saved', counts: { transcripts: 1, screenshots: 1, analyses: 1 } })
       } else reply(response, 404, { error: { code: 'NOT_FOUND', message: 'Unknown route' } })
     })
     servers.push(server)
@@ -142,6 +150,32 @@ describe('session HTTP fixture', () => {
         ['sessions', 'analyses', 'list', 's/1']
       ]
       for (const command of documented) await expect(runCli(['--json', ...command], dependencies)).resolves.toBe(0)
+      const screenshotPath = join(directory, 'copy.jpg')
+      const originalPath = join(directory, 'original.png')
+      const analysisPath = join(directory, 'analysis-export')
+      const sessionPath = join(directory, 'session-export')
+      await expect(runCli(['--json', 'sessions', 'screenshot', 'export', '--output', screenshotPath, 's/1', 'shot1'], dependencies)).resolves.toBe(0)
+      await expect(runCli(['--json', 'sessions', 'screenshot', 'export', '--output', originalPath, '--representation', 'original', 's/1', 'shot1'], dependencies)).resolves.toBe(0)
+      await expect(runCli(['--json', 'sessions', 'analyses', 'export', '--output', analysisPath, 's/1', 'a 1'], dependencies)).resolves.toBe(0)
+      await expect(runCli(['--json', 'sessions', 'export', '--output', sessionPath, 's/1'], dependencies)).resolves.toBe(0)
+      expect(await readFile(screenshotPath)).toEqual(image)
+      expect(await readFile(originalPath)).toEqual(image)
+      expect(JSON.parse(await readFile(join(analysisPath, 'manifest.json'), 'utf8')).retrieval.complete).toBe(true)
+      expect(JSON.parse(await readFile(join(sessionPath, 'manifest.json'), 'utf8')).counts.transcripts).toBe(1)
+      expect(requests.every((entry) => entry.authorization === undefined)).toBe(true)
+      const beforeInvalid = requests.length
+      await expect(runCli(['--json', 'sessions', 'export', 's/1'], dependencies)).resolves.toBe(2)
+      await expect(runCli(['--json', 'sessions', 'screenshot', 'export', '--output', join(directory, 'bad.jpg'), '--unknown', 's/1', 'shot1'], dependencies)).resolves.toBe(2)
+      expect(requests).toHaveLength(beforeInvalid)
+      const unsupported = {
+        ...dependencies,
+        apiFactory: () => ({
+          discovery: async () => ({ apiVersion: 'v1', sessionApiVersion: 'v1', capabilities: { sessionMetadata: true, sessionData: true, analysisData: true } }),
+          json: async () => { throw new Error('Session data request should not occur') }
+        }) as unknown as DocumentApiClient
+      }
+      await expect(runCli(['--json', 'sessions', 'export', '--output', join(directory, 'unsupported'), 's/1'], unsupported)).resolves.toBe(8)
+      expect(output.at(-1)).toContain('screenshotExport')
     } finally {
       if (oldPort === undefined) delete process.env.EXTRABRAIN_PORT
       else process.env.EXTRABRAIN_PORT = oldPort
