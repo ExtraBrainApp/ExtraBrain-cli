@@ -1,6 +1,6 @@
 # ExtraBrain CLI
 
-`extrabrain` is a standalone local command for the document API of a running ExtraBrain desktop app. The CLI reads local files and sends their bytes to the app through its authenticated loopback API. It does not launch the app, inspect its database, or require system Node or Python.
+`extrabrain` is a standalone local command for documents and read-only session evidence in a running ExtraBrain desktop app. Document imports use the authenticated loopback API. Session reads use the app's token-free loopback API. The CLI does not launch the app, inspect its database, or require system Node or Python.
 
 ## Install
 
@@ -83,6 +83,40 @@ Each batch accepts up to 20 files; append additional batches to grow a group bey
 JSON results include the destination's stable ID and current name. Resume keeps the original group ID, batch key, and item keys and skips successful files. A renamed group remains the same destination. A deleted group fails without falling back to Ungrouped or binding to a new group with the old name. Destination flags cannot override a resume.
 
 The CLI saves its resolution key before sending a name request, so a lost response can be retried safely. An unresolved name request expires after seven days and requires a new, explicit import. Once the group ID is saved, resume never resolves its name again. Legacy version-1 manifests remain supported as ungrouped imports. Failed setup messages include the saved resume command.
+
+## Session reads
+
+These commands require a future compatible app that advertises `sessionApiVersion: "v1"` and the operation's `sessionMetadata`, `sessionSearch`, `sessionCurrent`, `sessionData`, or `analysisData` capability at `/.well-known/extrabrain`. The current document-only app does not yet expose these routes. Session reads need no CLI pairing or credential. They use the same `127.0.0.1` listener and `EXTRABRAIN_PORT` override.
+
+```sh
+extrabrain --json sessions list --limit 50 --since 1760000000 --until 1760100000
+extrabrain --json sessions search --limit 50 "release risks"
+extrabrain --json sessions current
+extrabrain --json sessions get <session-id>
+extrabrain --json sessions transcripts --limit 200 <session-id>
+extrabrain --json sessions screenshots <session-id>
+extrabrain --json sessions facts <session-id>
+extrabrain --json sessions topics <session-id>
+extrabrain --json sessions questions <session-id>
+extrabrain --json sessions chat-turns <session-id>
+extrabrain --json sessions insights <session-id>
+extrabrain --json sessions analyses list <session-id>
+extrabrain --json sessions analyses get <session-id> <analysis-id>
+```
+
+`list` and `search` accept `--limit`, `--cursor`, `--since`, and `--until`. Collection and analysis lists accept `--limit` and `--cursor`. The default page size is 50 and maximum is 200. Time filters are Unix seconds. Follow `data.nextCursor` on the same command with `--cursor`, keeping the original query and time filters. Pages include `items`, `totalCount`, `nextCursor`, and `snapshot`; an empty terminal page is valid. A snapshot conflict exits with code 5 and requires a fresh traversal. `current` reports bounded live coverage as supplied by the app, including a null active session ID when idle. Historical reads use persisted session IDs and app snapshots.
+
+Records retain stored text, source, speaker, relative timing, relationships, and additive app fields. Long text may appear as a content reference. Read it with the originating snapshot, then follow `nextOffset` until null:
+
+```sh
+extrabrain --json sessions content --snapshot <snapshot> --offset 0 --max-chars 10000 <session-id> <content-id>
+```
+
+Content offsets and `totalChars` use JavaScript UTF-16 code units, as required by the proposed API contract. The CLI preserves unfiltered stored transcripts; any cleaned or model-supplied version is a separate labelled record. Relative audio timing fields retain milliseconds.
+
+Analysis `get` exhausts every available manifest part and referenced text under one snapshot, with a 16 MiB JSON bound. Its `retrieval.complete` means all advertised available text was fetched. The app's `provenance.status` remains `complete`, `partial`, or `legacy_partial`, with missing categories and reasons. Older analyses cannot supply prompts, model attempts, continuity evidence, tool results, or final model input that the app did not retain. The CLI does not reconstruct them from current settings. Image descriptors contain identity and availability, never inline binary bytes. An oversized get returns `OUTPUT_TOO_LARGE` and recommends analysis export once that command is available.
+
+The proposed app contract uses `/api/v1/sessions`, `/search`, `/current`, `/{sessionId}`, `/{sessionId}/{collection}`, `/{sessionId}/analyses`, `/{sessionId}/analyses/{analysisId}`, `/{sessionId}/analyses/{analysisId}/parts/{partId}`, and `/{sessionId}/content/{contentId}`. IDs and cursors are opaque and URL encoded. Every related page carries `snapshot`; content pages carry `contentId`, `text`, `offset`, `nextOffset`, and `totalChars`. Analysis manifests carry `schemaVersion`, scoped IDs, provenance, part descriptors and counts, and image descriptors. The app must retain immutable historical request/result, profile and prompts, strategy, provider/model attempts, primary and continuity evidence, prior context, facts/topics/questions, tools and results, budget decisions, and final model input wherever available. Image descriptors must identify each advertised representation, availability, media type, byte length, and SHA-256. The separate app implementation has not yet been verified against this proposed contract.
 
 ## Develop
 

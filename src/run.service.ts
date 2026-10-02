@@ -3,6 +3,7 @@ import { CliApiError } from './apiClient.service'
 import { executeDocumentsCommand } from './documentCommands.service'
 import { FileExpansionError } from './fileExpansion.service'
 import { requireCapabilities, requiredDocumentCapabilities } from './protocol'
+import { executeSessionCommand, parseSessionCommand } from './sessionCommands.service'
 import { updateCli } from './update'
 import { CLI_VERSION } from './version'
 import {
@@ -27,6 +28,14 @@ Commands:
   documents search [--limit <n>] <query>
   documents export --output <path> <document-id>
   documents delete --revision <n> <document-id>
+  sessions list [--limit <n>] [--cursor <cursor>] [--since <seconds>] [--until <seconds>]
+  sessions search [page flags] <query>
+  sessions current
+  sessions get <session-id>
+  sessions <transcripts|screenshots|facts|topics|questions|chat-turns|insights> [page flags] <session-id>
+  sessions content --snapshot <snapshot> [--offset <n>] [--max-chars <n>] <session-id> <content-id>
+  sessions analyses list [page flags] <session-id>
+  sessions analyses get <session-id> <analysis-id>
   update
   --version
 
@@ -55,11 +64,16 @@ const VALUE_FLAGS = new Set([
   'max-chars',
   'limit',
   'revision',
-  'scope'
+  'scope',
+  'cursor',
+  'since',
+  'until',
+  'snapshot'
 ])
 
 const setFlag = (flags: Map<string, string | true>, name: string, value: string | true): void => {
   const existing = flags.get(name)
+  if (existing !== undefined && name !== 'scope') throw new Error(`--${name} may only be supplied once`)
   flags.set(
     name,
     name === 'scope' && typeof existing === 'string' && typeof value === 'string'
@@ -261,6 +275,10 @@ const executeCommand = async (
     requireCapabilities(await publicClient.discovery(), requiredDocumentCapabilities(parsed.command[1]))
     const client = dependencies.apiFactory(readCredential(dependencies.credentialStore))
     return executeDocumentsCommand(parsed, dependencies, client)
+  }
+  if (command === 'sessions') {
+    const request = parseSessionCommand(parsed)
+    return executeSessionCommand(request, dependencies.apiFactory(null))
   }
   throw new Error(HELP)
 }

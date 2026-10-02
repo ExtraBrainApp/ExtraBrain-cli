@@ -23,6 +23,20 @@ export interface CliResult {
   message: string
 }
 
+export type SessionCapability =
+  | 'sessionMetadata'
+  | 'sessionSearch'
+  | 'sessionCurrent'
+  | 'sessionData'
+  | 'analysisData'
+  | 'screenshotExport'
+
+export interface SessionDiscovery {
+  apiVersion: 'v1'
+  sessionApiVersion: 'v1'
+  capabilities: Partial<Record<SessionCapability, boolean>> & Record<string, unknown>
+}
+
 export interface CredentialStore {
   clear: () => void
   read: () => { status: 'failed' | 'notFound' } | { status: 'found'; value: string }
