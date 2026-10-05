@@ -80,7 +80,7 @@ export class DocumentApiClient {
   private async send(
     path: string,
     init: RequestInit = {},
-    authenticated = true
+    authenticated = false
   ): Promise<Response> {
     const headers = new Headers(init.headers)
     if (!headers.has('accept')) headers.set('accept', 'application/json')
@@ -108,7 +108,7 @@ export class DocumentApiClient {
   async json(
     path: string,
     init: RequestInit = {},
-    authenticated = true
+    authenticated = false
   ): Promise<Record<string, unknown>> {
     const response = await this.send(path, init, authenticated)
     const payload = await parseResponse(response)

@@ -33,6 +33,7 @@ export const requireCapabilities = (
 
 export const requiredDocumentCapabilities = (action: string | undefined): DocumentCapability[] => {
   if (action === 'import' || action === 'resume' || action === 'status') return ['documentImport']
+  if (action === 'groups') return ['documentGroups']
   if (action === 'list') return ['documentMetadata']
   if (action === 'text') return ['extractedText']
   if (action === 'search') return ['indexedSearch']

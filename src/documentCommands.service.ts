@@ -105,6 +105,10 @@ export const executeDocumentsCommand = async (
     if (manifest.group) requireCapabilities(await client.discovery(), ['documentGroups'])
     return executeImport(client, manifest, dependencies.resumeStore)
   }
+  if (action === 'groups') {
+    const data = await requestJson(client, '/api/v1/document-groups')
+    return { code: CliExitCode.SUCCESS, data, message: 'Document groups listed.' }
+  }
   if (action === 'list') {
     const data = await requestJson(client, '/api/v1/documents')
     return { code: CliExitCode.SUCCESS, data, message: 'Documents listed.' }

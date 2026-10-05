@@ -1,6 +1,6 @@
 # ExtraBrain CLI
 
-`extrabrain` is a standalone local command for documents and read-only session evidence in a running ExtraBrain desktop app. Document imports use the authenticated loopback API. Session reads use the app's token-free loopback API. The CLI does not launch the app, inspect its database, or require system Node or Python.
+`extrabrain` is a standalone local command for documents and read-only session evidence in a running ExtraBrain desktop app. Document commands and session reads use the app's token-free loopback HTTP API. The CLI does not launch the app, inspect its database, or require system Node or Python.
 
 ## Install
 
@@ -18,11 +18,11 @@ The installer needs no administrator privileges. It uses `curl`, `tar`, and `sha
 
 Install a particular stable release with `EXTRABRAIN_VERSION=v0.1.1` in the installer environment. The default is the latest stable GitHub release. Release tags use `vMAJOR.MINOR.PATCH`; CLI and app API versions are independent. An installed executable stays at its installed version during document commands. Run `extrabrain update` or rerun the installer to update it explicitly. `extrabrain --version` reports the installed version.
 
-To uninstall, remove only `~/.local/bin/extrabrain`. Removing the command leaves ExtraBrain application data, imported documents, and import resume manifests intact. Revoke the CLI's pairing in the app if access should end.
+To uninstall, remove only `~/.local/bin/extrabrain`. Removing the command leaves ExtraBrain application data, imported documents, and import resume manifests intact.
 
 ## App compatibility
 
-The CLI requires a running app listener on `127.0.0.1:37373` by default. If the app's document API uses another port, set `EXTRABRAIN_PORT` to that numeric port. The CLI checks discovery API version `v1` and each required document capability before a protected command. It reports exit code `3` when no app is running and `8` for an unsupported API version or disabled capability. It never starts a second app instance.
+The CLI requires a running app listener on `127.0.0.1:37373` by default. If the app's document API uses another port, set `EXTRABRAIN_PORT` to that numeric port. The CLI checks discovery API version `v1` and each required document capability before a document command. It reports exit code `3` when no app is running and `8` for an unsupported API version or disabled capability. It never starts a second app instance.
 
 | CLI release | Required app API | App build | Status |
 | --- | --- | --- | --- |
@@ -33,33 +33,30 @@ The CLI has no distribution-channel check. A Mac App Store app will work when it
 
 ## Agent workflow
 
-The app must be running and its document automation listener enabled. Approve the pairing request in the app. Pairing stores the credential in macOS Keychain. There is no plaintext fallback. Pairing defaults to `documents.metadata.read` and `documents.import`.
+The app must be running and its document automation listener enabled. Current ExtraBrain V2 document HTTP commands require no pairing or stored credential, including on a clean installation. Retired document pairing endpoints return not found; the legacy `pair` command is not needed for this API. MCP retains its separate credential and approval requirements.
 
 ```sh
 extrabrain --json capabilities
-extrabrain pair
 extrabrain --json documents import -- report.pdf notes.md
 extrabrain --json documents status <batch-id>
 extrabrain --json documents status --item <item-id>
 extrabrain --json documents resume <resume-id>
+extrabrain --json documents groups
 extrabrain --json documents list
 ```
 
-Request elevated scopes explicitly and approve the new request in the app before reading extracted text, deleting, or exporting originals:
+Read extracted text, search, export originals, and delete through the same token-free document API:
 
 ```sh
-extrabrain pair --scope documents.metadata.read --scope documents.text.read
 extrabrain --json documents search --limit 10 "release risks"
 extrabrain --json documents text --generation 2 --offset 0 --max-chars 5000 <document-id>
 
-extrabrain pair --scope documents.metadata.read --scope documents.original.export
 extrabrain --json documents export --output ./report-copy.pdf <document-id>
 
-extrabrain pair --scope documents.metadata.read --scope documents.delete
 extrabrain --json documents delete --revision 4 <document-id>
 ```
 
-A new pairing request replaces the CLI's stored credential. Request all needed scopes together if one workflow uses several elevated operations. Delete requires explicit user intent, one document ID, and its current revision. On a revision conflict, read current metadata and ask again rather than retrying deletion automatically. Original export writes the exact managed bytes to a new path and refuses to overwrite an existing file. Extracted text is bounded and tied to an index generation; it is not a reconstruction of the original.
+Delete requires explicit user intent, one document ID, and its current revision. On a revision conflict, read current metadata and ask again rather than retrying deletion automatically. Original export writes the exact managed bytes to a new path and refuses to overwrite an existing file. Extracted text is bounded and tied to an index generation; it is not a reconstruction of the original.
 
 The CLI reads files from its own filesystem namespace. A container or remote agent cannot import a desktop-only path. Use the app's native file picker when the CLI cannot read the file. Imports are additive: missing directory entries never delete app documents. Supported inputs are UTF-8 `.txt`, `.md`, and `.pdf`, at most 10 MiB per file and 20 files per batch. Nested directories require `--recursive`. Symlinks, devices, and other non-regular files are rejected. Put paths beginning with `-` after `--`. On interruption, use the returned resume ID to retry unchanged files. Changed source bytes require a fresh import intent.
 
@@ -76,7 +73,7 @@ extrabrain --json documents import --group-id <group-id> -- another-note.md
 extrabrain --json documents resume <resume-id>
 ```
 
-`--group` and `--group-id` are mutually exclusive. Names support Unicode; quote spaces and use `--group=-name` for a name beginning with a dash. Grouped imports require the app's `documentGroups` capability. Existing commands without a group continue to work with apps that lack that capability. ID lookup and grouped resume use the default pairing's metadata scope.
+`--group` and `--group-id` are mutually exclusive. Names support Unicode; quote spaces and use `--group=-name` for a name beginning with a dash. Grouped imports require the app's `documentGroups` capability. Existing commands without a group continue to work with apps that lack that capability. Group listing, ID lookup, and grouped resume require no credential.
 
 Each batch accepts up to 20 files; append additional batches to grow a group beyond 20. The same content can be imported independently into different named groups. Imports without a destination remain Ungrouped and retain library-wide duplicate checks.
 
