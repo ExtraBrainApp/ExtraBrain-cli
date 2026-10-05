@@ -142,18 +142,29 @@ export class SessionDataService {
 
   async *allPages(
     read: (cursor: string | undefined, snapshot: string | undefined) => Promise<SessionPage>,
-    initialSnapshot?: string
+    initialSnapshot?: string,
+    identityField: 'id' | 'analysisId' | 'screenshotId' = 'id'
   ): AsyncGenerator<SessionPage> {
     let cursor: string | undefined
     let snapshot = initialSnapshot
     let fetched = 0
     let totalCount: number | undefined
     const seen = new Set<string>()
+    const seenIds = new Set<string>()
     do {
       const page = await read(cursor, snapshot)
       snapshot = checkSnapshot(page, snapshot)
       if (totalCount !== undefined && page.totalCount !== totalCount) invalid('Page totalCount changed')
       totalCount = page.totalCount
+      for (const item of page.items) {
+        const id = identity(item[identityField] === undefined ? item.id : item[identityField], 'record identity')
+        // These list aliases name the same record. Part references can name other records.
+        if (identityField !== 'id' && item.id !== undefined) {
+          if (identity(item.id, 'record identity') !== id) invalid('Conflicting record identity')
+        }
+        if (seenIds.has(id)) invalid('Duplicate record identity')
+        seenIds.add(id)
+      }
       fetched += page.items.length
       if (fetched > totalCount || (page.nextCursor === null && fetched !== totalCount)) invalid('Incomplete page traversal')
       yield page

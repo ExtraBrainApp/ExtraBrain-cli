@@ -273,7 +273,7 @@ export class SessionExportService {
         const file = await open(join(output, `${collection}.jsonl`), 'wx', 0o600)
         let fetched = 0
         try {
-          for await (const page of this.data.allPages((cursor) => this.data.collection(sessionId, collection, { cursor, snapshot }), snapshot)) {
+          for await (const page of this.data.allPages((cursor) => this.data.collection(sessionId, collection, { cursor, snapshot }), snapshot, collection === 'screenshots' ? 'screenshotId' : 'id')) {
             for (const item of page.items) {
               await writeLine(file, item)
               fetched += 1
@@ -295,7 +295,7 @@ export class SessionExportService {
       }
       const assets = await this.imageFiles(join(output, 'screenshots'), sessionId, images, snapshot)
       const analyses: Record<string, unknown>[] = []
-      for await (const page of this.data.allPages((cursor) => this.data.analyses(sessionId, { cursor, snapshot }), snapshot)) {
+      for await (const page of this.data.allPages((cursor) => this.data.analyses(sessionId, { cursor, snapshot }), snapshot, 'analysisId')) {
         for (const item of page.items) {
           const id = text(item.analysisId ?? item.id, 'analysis ID')
           const file = `analyses/${safeName(id)}`
@@ -322,7 +322,7 @@ export class SessionExportService {
       const metadata = await this.data.get(sessionId)
       const snapshot = metadata.snapshot as string
       let selected: Record<string, unknown> | undefined
-      for await (const page of this.data.allPages((cursor) => this.data.collection(sessionId, 'screenshots', { cursor, snapshot }), snapshot)) {
+      for await (const page of this.data.allPages((cursor) => this.data.collection(sessionId, 'screenshots', { cursor, snapshot }), snapshot, 'screenshotId')) {
         selected = page.items.find((item) => item.id === screenshotId || item.screenshotId === screenshotId) ?? selected
       }
       if (!selected) throw new CliApiError('NOT_FOUND', 'Screenshot is not in this session')

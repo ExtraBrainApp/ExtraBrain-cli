@@ -32,6 +32,52 @@ describe('session data contract', () => {
     expect(vi.mocked(json).mock.calls[0][0]).toContain('s%2F%E6%9D%B1%E4%BA%AC')
   })
 
+  it.each([
+    [{}, 'id'], [{ id: '' }, 'id'], [{ id: 1 }, 'id'], [{ id: null }, 'id'],
+    [{ id: 'valid', analysisId: '' }, 'analysisId'],
+    [{ id: 'valid', analysisId: null }, 'analysisId'],
+    [{ id: 'valid', screenshotId: 1 }, 'screenshotId']
+  ] as const)('rejects missing or malformed record identity %j', async (item, field) => {
+    const { data } = service(() => ({ items: [item], totalCount: 1, nextCursor: null, snapshot: 'rev-1' }))
+    const traversal = data.allPages(() => data.page('/fixture'), 'rev-1', field)
+    await expect(traversal.next()).rejects.toMatchObject({ code: 'INVALID_RESPONSE', message: 'Invalid record identity' })
+  })
+
+  it.each(['id', 'analysisId', 'screenshotId'] as const)('rejects duplicate %s before yielding the corrupt page', async (field) => {
+    const { data } = service((path) => ({ items: [{ [field]: 'same', text: path }], totalCount: 2,
+      nextCursor: path.includes('cursor=') ? null : 'second', snapshot: 'rev-1' }))
+    const traversal = data.allPages((cursor) => data.page('/fixture', { cursor }), 'rev-1', field)
+    expect((await traversal.next()).done).toBe(false)
+    await expect(traversal.next()).rejects.toMatchObject({ code: 'INVALID_RESPONSE', message: 'Duplicate record identity' })
+  })
+
+  it('rejects duplicate rows within a page before yielding any rows', async () => {
+    const { data } = service(() => ({ items: [{ id: 'same' }, { id: 'same' }], totalCount: 2, nextCursor: null, snapshot: 'rev-1' }))
+    await expect(data.allPages(() => data.page('/fixture')).next()).rejects.toThrow('Duplicate record identity')
+  })
+
+  it.each(['analysisId', 'screenshotId'] as const)('preserves matching %s aliases and distinct identities across pages', async (field) => {
+    const { data } = service((path) => {
+      const id = path.includes('cursor=') ? 'second' : 'first'
+      return { items: [{ id, [field]: id }], totalCount: 2, nextCursor: id === 'first' ? 'second' : null, snapshot: 'rev-1' }
+    })
+    const ids: unknown[] = []
+    for await (const page of data.allPages((cursor) => data.page('/fixture', { cursor }), 'rev-1', field)) ids.push(...page.items.map((item) => item.id))
+    expect(ids).toEqual(['first', 'second'])
+  })
+
+  it.each(['analysisId', 'screenshotId'] as const)('rejects conflicting %s aliases', async (field) => {
+    const { data } = service(() => ({ items: [{ id: 'first', [field]: 'other' }], totalCount: 1, nextCursor: null, snapshot: 'rev-1' }))
+    await expect(data.allPages(() => data.page('/fixture'), 'rev-1', field).next()).rejects.toThrow('Conflicting record identity')
+  })
+
+  it('rejects duplicate part records during JSON analysis retrieval', async () => {
+    const { data } = service((path) => path.includes('/parts/')
+      ? { items: [{ id: 'same' }, { id: 'same' }], totalCount: 2, nextCursor: null, snapshot: 'rev-1' }
+      : partManifest([{ id: 'input', role: 'model-input', totalCount: 2 }]))
+    await expect(data.getAnalysis('s/東京', 'a 1')).rejects.toMatchObject({ code: 'INVALID_RESPONSE', message: 'Duplicate record identity' })
+  })
+
   it('assembles non-ASCII content over 100000 UTF-16 units', async () => {
     const original = '🌍é話'.repeat(30000)
     const { data } = service((path) => {
@@ -94,7 +140,7 @@ describe('session data contract', () => {
   })
 
   it('rejects repeated continuation cursors', async () => {
-    const { data } = service(() => ({ items: [{ id: 1 }], totalCount: 2, nextCursor: 'same', snapshot: 'rev-1' }))
+    const { data } = service((path) => ({ items: [{ id: path.includes('cursor=') ? 'second' : 'first' }], totalCount: 3, nextCursor: 'same', snapshot: 'rev-1' }))
     const collect = async () => { for await (const _page of data.allPages((cursor) => data.page('/api/v1/sessions', { cursor }))) { /* consume */ } }
     await expect(collect()).rejects.toThrow('Repeated cursor')
   })
@@ -110,7 +156,7 @@ describe('session data contract', () => {
   it('stops an oversized JSON analysis and recommends export', async () => {
     const huge = 'x'.repeat(ANALYSIS_JSON_LIMIT + 1)
     const { data } = service((path) => path.includes('/parts/')
-      ? { items: [{ text: huge }], totalCount: 1, nextCursor: null, snapshot: 'rev-1' }
+      ? { items: [{ id: 'large-record', text: huge }], totalCount: 1, nextCursor: null, snapshot: 'rev-1' }
       : partManifest([{ id: 'part', role: 'model-input', totalCount: 1 }]))
     await expect(data.getAnalysis('s/東京', 'a 1')).rejects.toMatchObject({ code: 'OUTPUT_TOO_LARGE' } satisfies Partial<CliApiError>)
   })
