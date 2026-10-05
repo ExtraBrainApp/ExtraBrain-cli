@@ -11,7 +11,6 @@ import {
   type CliDependencies,
   type CliOutput,
   type CliResult,
-  type CredentialStore,
   type ParsedArguments
 } from './types'
 
@@ -23,6 +22,7 @@ Commands:
   documents import [--group <name> | --group-id <id>] [--recursive] [--] <files-or-directories...>
   documents resume <resume-id>
   documents status [--item] <batch-or-item-id>
+  documents groups
   documents list
   documents text --generation <n> [--offset <n>] [--max-chars <n>] <document-id>
   documents search [--limit <n>] <query>
@@ -126,18 +126,6 @@ const parseArguments = (args: readonly string[]): ParsedArguments => {
     throw new Error('Group selectors are only supported by documents import; resume keeps its saved destination')
   }
   return { command, flags, json: flags.has('json'), paths }
-}
-
-const readCredential = (store: CredentialStore): string => {
-  const result = store.read()
-  if (result.status === 'failed') {
-    throw new CliApiError(
-      'PROTECTED_STORAGE_UNAVAILABLE',
-      'Protected credential storage is unavailable'
-    )
-  }
-  if (result.status === 'found') return result.value
-  throw new CliApiError('PAIRING_REQUIRED', 'Pair the CLI first')
 }
 
 const getPairingScopes = (scopeFlag: string | true | undefined): readonly string[] => {
@@ -277,8 +265,7 @@ const executeCommand = async (
   if (command === 'documents') {
     const publicClient = dependencies.apiFactory(null)
     requireCapabilities(await publicClient.discovery(), requiredDocumentCapabilities(parsed.command[1]))
-    const client = dependencies.apiFactory(readCredential(dependencies.credentialStore))
-    return executeDocumentsCommand(parsed, dependencies, client)
+    return executeDocumentsCommand(parsed, dependencies, publicClient)
   }
   if (command === 'sessions') {
     const request = parseSessionCommand(parsed)

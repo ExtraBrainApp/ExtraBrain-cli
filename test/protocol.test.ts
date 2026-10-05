@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DocumentApiClient } from '../src/apiClient.service'
 import { ResumeStore } from '../src/resumeStore.service'
 import { runCli } from '../src/run.service'
@@ -22,7 +22,7 @@ const reply = (response: ServerResponse, status: number, body: unknown) => {
 }
 
 describe('versioned app API fixture', () => {
-  it('discovers v1 and sends exact file bytes through the paired API', async () => {
+  it.each(['notFound', 'failed', 'found'] as const)('runs a token-free document workflow with %s credential storage', async (status) => {
     const sent: Buffer[] = []
     const requests: Array<{ path: string; authorization: string | undefined }> = []
     const server = createServer(async (request: IncomingMessage, response) => {
@@ -32,7 +32,7 @@ describe('versioned app API fixture', () => {
         reply(response, 200, {
           apiVersion: 'v1', available: true,
           capabilities: {
-            documentImport: true, documentMetadata: true, extractedText: true,
+            documentImport: true, documentGroups: true, documentMetadata: true, extractedText: true,
             indexedSearch: true, originalExport: true, revisionSafeDelete: true
           }
         })
@@ -44,7 +44,26 @@ describe('versioned app API fixture', () => {
         const chunks: Buffer[] = []
         for await (const chunk of request) chunks.push(chunk as Buffer)
         sent.push(Buffer.concat(chunks))
-        reply(response, 200, { status: 'completed' })
+        reply(response, sent.length === 1 ? 503 : 200, sent.length === 1
+          ? { error: { code: 'TEMPORARILY_UNAVAILABLE', message: 'Interrupted transfer' } }
+          : { status: 'completed' })
+      } else if (path === '/api/v1/documents/document-1/original') {
+        response.writeHead(200, { 'content-type': 'application/pdf' })
+        response.end(sent.at(-1))
+      } else if (path === '/api/v1/document-groups') {
+        reply(response, 200, { groups: [] })
+      } else if (path === '/api/v1/document-imports/batches/batch-1' || path === '/api/v1/document-imports/items/operation-1') {
+        reply(response, 200, { status: 'indexed' })
+      } else if (path === '/api/v1/documents/document-1/text?generation=1') {
+        reply(response, 200, { text: 'Résumé' })
+      } else if (path === '/api/v1/documents/search?q=R%C3%A9sum%C3%A9') {
+        reply(response, 200, { documents: [{ id: 'document-1' }] })
+      } else if (path === '/api/v1/documents') {
+        reply(response, 200, { documents: [{ id: 'document-1' }] })
+      } else if (path === '/api/v1/documents/document-1' && request.method === 'DELETE') {
+        expect(request.headers['x-extrabrain-expected-revision']).toBe('1')
+        expect(request.headers['x-idempotency-key']).toBeTruthy()
+        reply(response, 200, { status: 'deleted' })
       } else {
         reply(response, 404, { error: { code: 'NOT_FOUND', message: 'Unknown route' } })
       }
@@ -63,18 +82,64 @@ describe('versioned app API fixture', () => {
     const dependencies = {
       apiFactory: (credential: string | null) => new DocumentApiClient(credential, origin),
       credentialStore: {
-        read: () => ({ status: 'found' as const, value: 'fixture-token' }),
-        write: () => {}, clear: () => {}
+        read: vi.fn(() => status === 'found' ? { status, value: 'stale-token' } : { status }),
+        write: vi.fn(), clear: vi.fn()
       },
       output: { write: (value: string) => output.push(value), error: () => {} },
       resumeStore: new ResumeStore(join(directory, 'state'))
     }
     await expect(runCli(['--json', 'capabilities'], dependencies)).resolves.toBe(0)
-    await expect(runCli(['--json', 'documents', 'import', '--', source], dependencies)).resolves.toBe(0)
-    expect(sent).toEqual([bytes])
-    expect(requests.find((request) => request.path === '/.well-known/extrabrain')?.authorization).toBeUndefined()
-    expect(requests.find((request) => request.path.endsWith('/content'))?.authorization).toBe('Bearer fixture-token')
+    await expect(runCli(['--json', 'documents', 'import', '--', source], dependencies)).resolves.toBe(6)
+    const resumeId = JSON.parse(output.at(-1)!).data.resumeId
+    await expect(runCli(['--json', 'documents', 'resume', resumeId], dependencies)).resolves.toBe(0)
+    const exported = join(directory, 'export.pdf')
+    const commands = [
+      ['documents', 'status', 'batch-1'],
+      ['documents', 'status', '--item', 'operation-1'],
+      ['documents', 'groups'],
+      ['documents', 'list'],
+      ['documents', 'text', '--generation', '1', 'document-1'],
+      ['documents', 'search', 'Résumé'],
+      ['documents', 'export', '--output', exported, 'document-1'],
+      ['documents', 'delete', '--revision', '1', 'document-1']
+    ]
+    for (const command of commands) {
+      await expect(runCli(['--json', ...command], dependencies)).resolves.toBe(0)
+    }
+    expect(sent).toEqual([bytes, bytes])
+    expect(await readFile(exported)).toEqual(bytes)
+    expect(requests.every((request) => request.authorization === undefined)).toBe(true)
+    expect(requests.some((request) => request.path.includes('/pairing/'))).toBe(false)
+    expect(dependencies.credentialStore.read).not.toHaveBeenCalled()
+    expect(dependencies.credentialStore.write).not.toHaveBeenCalled()
+    expect(dependencies.credentialStore.clear).not.toHaveBeenCalled()
     expect(output[1]).not.toContain(source)
+  })
+})
+
+describe('document HTTP errors', () => {
+  it.each([
+    [401, { error: { code: 'AUTHENTICATION_REQUIRED', message: 'Unauthorized' } }, 'AUTHENTICATION_REQUIRED'],
+    [403, { error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 'FORBIDDEN'],
+    [409, { error: { code: 'REVISION_CONFLICT', message: 'Stale revision' } }, 'REVISION_CONFLICT'],
+    [409, { status: 'duplicate', existingDocumentId: 'existing' }, 'DUPLICATE'],
+    [404, { error: { code: 'NOT_FOUND', message: 'Not found' } }, 'NOT_FOUND'],
+    [503, {}, 'HTTP_503']
+  ])('preserves HTTP %s errors without a credential', async (status, body, code) => {
+    const request = vi.fn<typeof fetch>(async () => new Response(JSON.stringify(body), { status }))
+    const client = new DocumentApiClient(null, 'http://127.0.0.1:37373', request)
+    await expect(client.json('/api/v1/documents')).rejects.toMatchObject({ code, status })
+    expect(request).toHaveBeenCalledOnce()
+    expect(new Headers(request.mock.calls[0]?.[1]?.headers).has('authorization')).toBe(false)
+  })
+
+  it('preserves explicit credential authentication for legacy callers', async () => {
+    const request = vi.fn<typeof fetch>(async () => new Response('{}'))
+    const missing = new DocumentApiClient(null, undefined, request)
+    await expect(missing.json('/protected', {}, true)).rejects.toMatchObject({ code: 'PAIRING_REQUIRED' })
+    expect(request).not.toHaveBeenCalled()
+    await new DocumentApiClient('legacy-token', undefined, request).json('/protected', {}, true)
+    expect(new Headers(request.mock.calls[0]?.[1]?.headers).get('authorization')).toBe('Bearer legacy-token')
   })
 })
 

@@ -184,6 +184,7 @@ describe('ExtraBrain CLI contract', () => {
   })
 
   it.each([
+    [['documents', 'groups'], 'documentGroups'],
     [['documents', 'list'], 'documentMetadata'],
     [['documents', 'import', 'report.pdf'], 'documentImport'],
     [['documents', 'text', '--generation', '1', 'doc'], 'extractedText'],
@@ -199,9 +200,9 @@ describe('ExtraBrain CLI contract', () => {
     expect(harness.dependencies.credentialStore.read).not.toHaveBeenCalled()
   })
 
-  it('reports revocation and stale revision with distinct JSON outcomes', async () => {
+  it.each([401, 403])('reports HTTP %s authentication and stale revision with distinct JSON outcomes', async (status) => {
     const revoked = await createHarness({
-      json: vi.fn(async () => { throw new CliApiError('AUTHENTICATION_REQUIRED', 'Revoked', 401) })
+      json: vi.fn(async () => { throw new CliApiError('AUTHENTICATION_REQUIRED', 'Revoked', status) })
     })
     await expect(runCli(['--json', 'documents', 'list'], revoked.dependencies)).resolves.toBe(CliExitCode.AUTHENTICATION)
     expect(revoked.written[0]).toContain('AUTHENTICATION_REQUIRED')
