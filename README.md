@@ -80,6 +80,41 @@ The CLI reads files from its own filesystem namespace. A container or remote age
 
 JSON commands return `{ "code": number, "data": object | null, "message": string }`. Exit codes: `0` success, `1` failure, `2` usage, `3` app not running, `4` authentication or revocation, `5` conflict, `6` partial batch, `7` protected storage unavailable, `8` unsupported API or capability. A partial batch reports every file and a resume ID. No binary content or credential appears in command output.
 
+## Profiles
+
+Profile commands require an app that advertises `profileApiVersion: "v1"` and the relevant `profileRead`, `profileWrite`, `profileSelection`, or `profileActions` capability. They require the capability-compatible application proposed in [ExtraBrain PR #1047](https://github.com/ExtraBrainApp/ExtraBrain/pull/1047); released apps may not yet expose these routes. Like document and session commands, they use the token-free loopback listener and `EXTRABRAIN_PORT`, never launch the app, and never write application settings directly.
+
+```sh
+extrabrain --json profiles list
+extrabrain --json profiles get system assistant
+extrabrain --json profiles get custom <profile-id>
+extrabrain --json profiles selection
+
+extrabrain --json profiles create --name "Research" --description "Evidence first" --prompt "Inspect the evidence" --icon brain --use-full-session-context
+extrabrain --json profiles update custom <profile-id> --description "" --reset-use-full-session-context
+extrabrain --json profiles update system <profile-id> --disabled
+extrabrain --json profiles delete custom <profile-id>
+
+extrabrain --json profiles pin system assistant
+extrabrain --json profiles pin custom <profile-id>
+extrabrain --json profiles auto
+```
+
+Use `--enabled` or `--disabled` for profiles and actions. Profile behavior flags are `--expand-window-on-analysis`, `--analyze-on-region-capture`, `--use-full-session-context`, `--auto-analyze-topics`, and `--auto-analyze-questions`; add `--no-` to set false or `--reset-` to remove a stored override. Empty quoted text clears `description` or `prompt`. Create and update also accept one strict JSON object with `--input '<json>'` or `--input-file path`; JSON input cannot be mixed with field flags. The app enforces the published limits and icon allowlists, and the CLI rejects malformed local inputs before sending them.
+
+```sh
+extrabrain --json profiles actions list system assistant
+extrabrain --json profiles actions get custom <profile-id> <action-id>
+extrabrain --json profiles actions create custom <profile-id> --name "Inspect" --prompt "Inspect evidence" --icon target
+extrabrain --json profiles actions update system assistant <action-id> --disabled
+extrabrain --json profiles actions delete custom <profile-id> <action-id>
+extrabrain --json profiles actions order system assistant <action-id-1> <action-id-2>
+```
+
+Action ordering must list every action owned by that profile exactly once, including disabled actions. The profile path binds ownership. Built-in actions may only be enabled or disabled and cannot be deleted; the app also enforces the different Pro rules for custom profiles, custom actions, system controls, and existing custom actions under system profiles.
+
+Every mutation sends `expectedRevision` and `requestId`. By default the CLI reads the target first to use its current revision and generates a UUID request ID, which it returns with the expected revision in JSON data and human output. Supply those values with `--revision <n> --request-id <id>` to make an exact retry. For a lost response, reuse the exact command, route, payload, revision, and ID. The CLI never silently retries conflicts or uncertain results. On `REVISION_CONFLICT`, read again, merge, and submit a new request ID. On `REQUEST_ID_REUSE` or `OPERATION_STATE_UNKNOWN`, inspect profiles/actions before deciding whether a new intent is needed. Recorded app replays retain their `replayed` and `revision` response fields.
+
 ## Document groups
 
 Create a named group or append another batch to the same group:
