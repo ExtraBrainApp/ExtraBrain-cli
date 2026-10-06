@@ -1,8 +1,9 @@
 import { LocalPrincipalScope } from './scopes'
 import { CliApiError } from './apiClient.service'
 import { executeDocumentsCommand } from './documentCommands.service'
+import { executeProfileCommand } from './profileCommands.service'
 import { FileExpansionError } from './fileExpansion.service'
-import { requireCapabilities, requiredDocumentCapabilities } from './protocol'
+import { requireCapabilities, requireProfileCapabilities, requiredDocumentCapabilities, requiredProfileCapabilities } from './protocol'
 import { executeSessionCommand, parseSessionCommand } from './sessionCommands.service'
 import { updateCli } from './update'
 import { CLI_VERSION } from './version'
@@ -39,6 +40,13 @@ Commands:
   sessions export --output <new-directory> <session-id>
   sessions screenshot export --output <new-file> [--representation <name>] <session-id> <screenshot-id>
   sessions analyses export --output <new-directory> <session-id> <analysis-id>
+  profiles list
+  profiles get <system|custom> <profile-id>
+  profiles create (--input <json> | --input-file <path> | --name <text> --description <text> --prompt <text>) [profile flags]
+  profiles update <system|custom> <profile-id> [profile flags]
+  profiles delete <system|custom> <profile-id> [--revision <n>] [--request-id <id>]
+  profiles selection | profiles pin <system|custom> <profile-id> | profiles auto
+  profiles actions <list|get|create|update|delete|order> <system|custom> <profile-id> [action-id ...]
   update
   --version
 
@@ -72,7 +80,14 @@ const VALUE_FLAGS = new Set([
   'since',
   'until',
   'snapshot',
-  'representation'
+  'representation',
+  'input',
+  'input-file',
+  'name',
+  'description',
+  'prompt',
+  'icon',
+  'request-id'
 ])
 
 const setFlag = (flags: Map<string, string | true>, name: string, value: string | true): void => {
@@ -104,7 +119,7 @@ const parseArguments = (args: readonly string[]): ParsedArguments => {
       if (inlineValue !== undefined) setFlag(flags, name, inlineValue)
       else if (VALUE_FLAGS.has(name)) {
         const next = args[index + 1]
-        if (!next || next.startsWith('--')) throw new Error(`--${name} requires a value`)
+        if (next === undefined || next.startsWith('--')) throw new Error(`--${name} requires a value`)
         setFlag(flags, name, next)
         index += 1
       } else setFlag(flags, name, true)
@@ -211,6 +226,41 @@ const mapError = (error: unknown): CliResult => {
   if (error.code === 'PROTECTED_STORAGE_UNAVAILABLE') {
     return { code: CliExitCode.PROTECTED_STORAGE_UNAVAILABLE, message }
   }
+  if (error.code === 'PRO_REQUIRED') {
+    return {
+      code: CliExitCode.FAILURE,
+      data: { error: error.code, details: error.details ?? null },
+      message: `${message}. This mutation requires ExtraBrain Pro; reads and eligible system controls remain available.`
+    }
+  }
+  if (error.code === 'READ_ONLY') {
+    return {
+      code: CliExitCode.FAILURE,
+      data: { error: error.code, details: error.details ?? null },
+      message: `${message}. Read the resource and use only its editable fields.`
+    }
+  }
+  if (error.code === 'OPERATION_STATE_UNKNOWN') {
+    return {
+      code: CliExitCode.CONFLICT,
+      data: { error: error.code, details: error.details ?? null },
+      message: `${message}. Inspect current profiles or actions before deciding whether a new intent is necessary.`
+    }
+  }
+  if (error.code === 'REQUEST_ID_REUSE') {
+    return {
+      code: CliExitCode.CONFLICT,
+      data: { error: error.code, details: error.details ?? null },
+      message: `${message}. Retry only with the exact original route, body, revision, and request ID; otherwise use a new intent.`
+    }
+  }
+  if (error.code === 'REVISION_CONFLICT') {
+    return {
+      code: CliExitCode.CONFLICT,
+      data: { error: error.code, details: error.details ?? null },
+      message: `${message}. Read the latest resource revision, merge the change, and submit a new request ID.`
+    }
+  }
   if (['PAIRING_REQUIRED', 'AUTHENTICATION_REQUIRED', 'FORBIDDEN'].includes(error.code) || error.status === 401 || error.status === 403) {
     return {
       code: CliExitCode.AUTHENTICATION,
@@ -270,6 +320,11 @@ const executeCommand = async (
   if (command === 'sessions') {
     const request = parseSessionCommand(parsed)
     return executeSessionCommand(request, dependencies.apiFactory(null))
+  }
+  if (command === 'profiles') {
+    const publicClient = dependencies.apiFactory(null)
+    requireProfileCapabilities(await publicClient.discovery(), requiredProfileCapabilities(parsed.command))
+    return executeProfileCommand(parsed, publicClient)
   }
   throw new Error(HELP)
 }
