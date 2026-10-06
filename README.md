@@ -9,16 +9,34 @@ Supported release targets are macOS arm64 and x64. The current release is not De
 macOS:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ExtraBrainApp/ExtraBrain-cli/master/install.sh | sh
-export PATH="$HOME/.local/bin:$PATH"
+curl -fsSL https://raw.githubusercontent.com/ExtraBrainApp/ExtraBrain-cli/master/install.sh | bash
+```
+
+Open a new terminal window, then check the installed version:
+
+```sh
 extrabrain --version
 ```
 
-The installer needs no administrator privileges. It uses `curl`, `tar`, and `shasum` or `sha256sum`.
+The installer puts the standalone executable in `~/.local/bin` for your account. It needs no administrator password, Node, or Python. For zsh and bash, it adds a small PATH block to your shell startup files automatically, so no manual export command is needed. It uses `curl`, `tar`, and `shasum` or `sha256sum`.
 
-Install a particular stable release with `EXTRABRAIN_VERSION=v0.1.1` in the installer environment. The default is the latest stable GitHub release. Release tags use `vMAJOR.MINOR.PATCH`; CLI and app API versions are independent. An installed executable stays at its installed version during document commands. Run `extrabrain update` or rerun the installer to update it explicitly. `extrabrain --version` reports the installed version.
+For zsh, it updates `.zprofile` and `.zshrc` in `ZDOTDIR` or your home directory. For bash, it updates `.bashrc` and the first existing login file among `.bash_profile`, `.bash_login`, and `.profile`, creating `.bash_profile` if none exists. Existing content is preserved, and reinstalling does not duplicate the block. Set `EXTRABRAIN_NO_MODIFY_PATH=1` in the installer's environment to leave shell configuration untouched. Other shells can use `~/.local/bin/extrabrain` directly or a custom destination already on PATH.
 
-To uninstall, remove only `~/.local/bin/extrabrain`. Removing the command leaves ExtraBrain application data, imported documents, and import resume manifests intact.
+Set `EXTRABRAIN_INSTALL_DIR` in the installer's environment for a custom destination. Custom destinations outside `~/.local/bin` do not change shell profiles. The installer warns if a custom destination is outside PATH or another ExtraBrain executable takes precedence. If automatic shell setup cannot write a profile, it reports the file and the installed executable's full path.
+
+To install for all local accounts, explicitly select `/usr/local/bin`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ExtraBrainApp/ExtraBrain-cli/master/install.sh | env EXTRABRAIN_INSTALL_DIR=/usr/local/bin bash
+```
+
+This optional mode requests administrator approval when needed and installs a root-owned executable with permissions `755`. Downloads and checksum verification run before elevation; only installation filesystem operations use administrator privileges. Run it in a terminal if authentication is needed.
+
+If you previously installed in `~/.local/bin`, rerun the default installer to configure your shell automatically. If you have another installation, check `command -v extrabrain` in your new terminal and remove an older copy only if it still takes precedence over the intended installation.
+
+Install a particular stable release with `EXTRABRAIN_VERSION=v0.1.1` in the installer environment. The default is the latest stable GitHub release. Release tags use `vMAJOR.MINOR.PATCH`; CLI and app API versions are independent. An installed executable stays at its installed version during document commands. Run `extrabrain update` or rerun the installer to update it explicitly. `extrabrain update` replaces the running packaged executable in its current directory unless `EXTRABRAIN_INSTALL_DIR` explicitly overrides the destination. Updating a system-wide installation requires administrator approval when needed, just like installation. Check the version separately with `extrabrain --version` after the update completes.
+
+To uninstall the default installation, run `rm ~/.local/bin/extrabrain`. You can leave the PATH block in place for other tools in that directory, or remove the block marked `# ExtraBrain CLI: user-local PATH` from the configured shell files. For a system-wide installation, run `sudo rm /usr/local/bin/extrabrain`; for a custom installation, remove only `extrabrain` from that directory. Removing the command leaves ExtraBrain application data, imported documents, and import resume manifests intact.
 
 ## App compatibility
 

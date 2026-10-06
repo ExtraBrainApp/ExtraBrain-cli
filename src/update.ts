@@ -1,4 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process'
+import { dirname } from 'node:path'
+import { isSea } from 'node:sea'
 import installShell from '../install.sh?raw'
 import installPowerShell from '../install.ps1?raw'
 import { CliApiError } from './apiClient.service'
@@ -21,10 +23,18 @@ export const updateCli = (): { scheduled: boolean } => {
   const result = spawnSync('sh', ['-s'], {
     encoding: 'utf8',
     input: installShell,
+    env: {
+      ...process.env,
+      ...(isSea() && !process.env.EXTRABRAIN_INSTALL_DIR
+        ? { EXTRABRAIN_INSTALL_DIR: dirname(process.execPath) }
+        : {})
+    },
     timeout: 120_000
   })
   if (result.error || result.status !== 0) {
-    throw new CliApiError('UPDATE_FAILED', 'Verified CLI update failed')
+    const detail = result.stderr?.trim() || result.error?.message || `Installer exited with status ${result.status}`
+    throw new CliApiError('UPDATE_FAILED', `Verified CLI update failed: ${detail}`)
   }
+  if (result.stderr) process.stderr.write(result.stderr)
   return { scheduled: false }
 }

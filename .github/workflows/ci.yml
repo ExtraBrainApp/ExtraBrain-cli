@@ -26,6 +26,8 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm run build:sea
+      - name: Test packaged executable updates
+        run: EXTRABRAIN_TEST_EXECUTABLE="$PWD/dist/extrabrain" npm test -- test/install.test.ts
       - name: Smoke test macOS executable
         shell: bash
         run: |
@@ -37,3 +39,55 @@ jobs:
           set -e
           test "$code" = 3
           echo "$result" | jq -e '.code == 3'
+      - name: Install macOS command for the current user
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(node -p 'require("./package.json").version')
+          arch=$(uname -m)
+          if [ "$arch" = x86_64 ]; then arch=x64; fi
+          release="$RUNNER_TEMP/installer-releases/download/v$version"
+          mkdir -p "$release"
+          asset="extrabrain-v$version-darwin-$arch.tar.gz"
+          tar -czf "$release/$asset" -C dist extrabrain
+          (cd "$release" && shasum -a 256 "$asset" > SHA256SUMS)
+          install_home="$RUNNER_TEMP/installer-home"
+          mkdir -p "$install_home"
+          echo "EXTRABRAIN_TEST_HOME=$install_home" >> "$GITHUB_ENV"
+          cat install.sh | env HOME="$install_home" ZDOTDIR="$install_home" SHELL=/bin/zsh EXTRABRAIN_RELEASE_BASE="file://$RUNNER_TEMP/installer-releases" EXTRABRAIN_VERSION="v$version" EXTRABRAIN_INSTALL_DIR= bash
+      - name: Verify user installation in new terminals
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(node -p 'require("./package.json").version')
+          for mode in -lc -ic; do
+            test "$(env HOME="$EXTRABRAIN_TEST_HOME" ZDOTDIR="$EXTRABRAIN_TEST_HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin /bin/zsh "$mode" 'extrabrain --version')" = "$version"
+          done
+          test "$(stat -f '%Su:%Lp' "$EXTRABRAIN_TEST_HOME/.local/bin/extrabrain")" = "$(id -un):755"
+      - name: Install optional system-wide command
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(node -p 'require("./package.json").version')
+          cat install.sh | env EXTRABRAIN_RELEASE_BASE="file://$RUNNER_TEMP/installer-releases" EXTRABRAIN_VERSION="v$version" EXTRABRAIN_INSTALL_DIR=/usr/local/bin bash
+      - name: Verify installed version and access from another account
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(node -p 'require("./package.json").version')
+          test "$(PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin extrabrain --version)" = "$version"
+          test "$(stat -f '%Su:%Sg:%Lp' /usr/local/bin/extrabrain)" = root:wheel:755
+          test "$(sudo -n -u nobody /usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin extrabrain --version)" = "$version"
+      - name: Update system-wide command
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(node -p 'require("./package.json").version')
+          result=$(EXTRABRAIN_RELEASE_BASE="file://$RUNNER_TEMP/installer-releases" EXTRABRAIN_VERSION="v$version" EXTRABRAIN_INSTALL_DIR= /usr/local/bin/extrabrain --json update)
+          echo "$result" | jq -e '.code == 0'
+      - name: Verify version after update
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin extrabrain --version)" = "$(node -p 'require("./package.json").version')"
+          test "$(stat -f '%Su:%Sg:%Lp' /usr/local/bin/extrabrain)" = root:wheel:755
