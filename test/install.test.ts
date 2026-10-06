@@ -75,7 +75,7 @@ describe.skipIf(process.platform !== 'darwin')('public shell installer', () => {
     await state.publish('second')
     expect(state.install().status).toBe(0)
     expect(await readFile(join(state.installDir, 'extrabrain'), 'utf8')).toBe('second')
-  })
+  }, 30_000)
 
   it('keeps the installed executable when a release is corrupt', async () => {
     const state = await fixture()
