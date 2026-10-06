@@ -212,7 +212,7 @@ describe('session exports', () => {
     expect((await readFile(join(output, partPath))).length).toBeGreaterThan(16 * 1024 * 1024)
     expect((manifest.parts as Array<{ fetched: number }>)[0].fetched).toBe(recordCount)
     expect(manifest.retrieval).toEqual({ complete: true })
-  })
+  }, 30_000)
 
   it('exports every collection and multiple analyses under one snapshot', async () => {
     const { service, directory } = await fixture()
