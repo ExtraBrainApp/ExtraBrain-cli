@@ -93,6 +93,15 @@ describe('profile commands', () => {
     expect(test.errors[1]).toContain('supported profile icon')
   })
 
+  it('reports a missing required text field as required, not as too long', async () => {
+    const json: JsonMock = vi.fn(async () => ({ revision: 9 }))
+    const test = harness(json)
+    await expect(runCli(['profiles', 'actions', 'create', 'custom', 'profile1', '--name', 'n'], test.dependencies)).resolves.toBe(CliExitCode.USAGE)
+    await expect(runCli(['profiles', 'create', '--name', 'n', '--description', 'd'], test.dependencies)).resolves.toBe(CliExitCode.USAGE)
+    expect(test.errors).toEqual([expect.stringContaining('prompt is required'), expect.stringContaining('prompt is required')])
+    expect(json).not.toHaveBeenCalled()
+  })
+
   it('rejects unknown, inapplicable, impossible, and trailing input before opening a profile request', async () => {
     const json: JsonMock = vi.fn(async () => ({ revision: 9 }))
     const test = harness(json)
