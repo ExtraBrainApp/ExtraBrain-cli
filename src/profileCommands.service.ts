@@ -110,7 +110,10 @@ const assertKeys = (input: JsonObject, allowed: readonly string[], label: string
 
 const text = (input: JsonObject, key: string, max: number, requiredField: boolean): void => {
   const value = input[key]
-  if (value === undefined && !requiredField) return
+  if (value === undefined) {
+    if (requiredField) throw new Error(`${key} is required`)
+    return
+  }
   if (typeof value !== 'string' || value.length > max) throw new Error(`${key} must be text of at most ${max} characters`)
 }
 
