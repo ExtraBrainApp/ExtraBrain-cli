@@ -91,3 +91,77 @@ jobs:
           set -euo pipefail
           test "$(PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin extrabrain --version)" = "$(node -p 'require("./package.json").version')"
           test "$(stat -f '%Su:%Sg:%Lp' /usr/local/bin/extrabrain)" = root:wheel:755
+
+  validate-windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            arch: x64
+          - runner: windows-11-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24.20.0
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build:sea
+      - name: Smoke test Windows executable
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          $version = node -p 'require("./package.json").version'
+          $actualVersion = & dist/extrabrain.exe --version
+          if ($LASTEXITCODE -ne 0 -or $actualVersion -ne $version) { throw "Version mismatch: $actualVersion" }
+          $output = & dist/extrabrain.exe --json capabilities
+          $exitCode = $LASTEXITCODE
+          $result = $output | ConvertFrom-Json
+          if ($exitCode -ne 3 -or $result.code -ne 3) { throw "Capabilities contract failed: $output" }
+          exit 0
+      - name: Install Windows command for the current user
+        shell: pwsh
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          $version = node -p 'require("./package.json").version'
+          $root = Join-Path $env:RUNNER_TEMP 'installer-releases'
+          $release = Join-Path $root "download\v$version"
+          New-Item -ItemType Directory -Force -Path $release | Out-Null
+          $asset = "extrabrain-v$version-win32-$env:ARCH.zip"
+          Compress-Archive -LiteralPath dist/extrabrain.exe -DestinationPath (Join-Path $release $asset)
+          $hash = (Get-FileHash -Algorithm SHA256 (Join-Path $release $asset)).Hash.ToLowerInvariant()
+          Set-Content -NoNewline -Path (Join-Path $release 'SHA256SUMS') -Value "$hash  $asset`n"
+          $server = Join-Path $env:RUNNER_TEMP 'release-server.cjs'
+          Set-Content -Path $server -Value @'
+          const { createReadStream, existsSync } = require('node:fs')
+          const { join } = require('node:path')
+          const root = process.argv[2]
+          require('node:http').createServer((request, response) => {
+            const path = join(root, decodeURIComponent(new URL(request.url, 'http://x').pathname))
+            if (!path.startsWith(root) || !existsSync(path)) return response.writeHead(404).end()
+            createReadStream(path).pipe(response)
+          }).listen(38123, '127.0.0.1')
+          '@
+          Start-Process -FilePath node -ArgumentList @($server, $root) -WindowStyle Hidden
+          Start-Sleep -Seconds 2
+          $env:EXTRABRAIN_RELEASE_BASE = 'http://127.0.0.1:38123'
+          $env:EXTRABRAIN_VERSION = "v$version"
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File install.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Installer failed' }
+      - name: Verify user installation in a new shell
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          $version = node -p 'require("./package.json").version'
+          $installDir = Join-Path $env:LOCALAPPDATA 'ExtraBrain\bin'
+          $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+          if (@($userPath -split ';') -notcontains $installDir) { throw "User PATH does not contain $installDir" }
+          $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+          $actual = powershell.exe -NoProfile -NonInteractive -Command "`$env:Path = '$machinePath;$userPath'; extrabrain --version"
+          if ($LASTEXITCODE -ne 0 -or $actual -ne $version) { throw "Installed version mismatch: $actual" }
+          exit 0

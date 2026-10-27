@@ -5,6 +5,12 @@ import installShell from '../install.sh?raw'
 import installPowerShell from '../install.ps1?raw'
 import { CliApiError } from './apiClient.service'
 
+// A packaged executable updates itself in place unless an install directory is requested.
+const installDirectory = (): Record<string, string> =>
+  isSea() && !process.env.EXTRABRAIN_INSTALL_DIR
+    ? { EXTRABRAIN_INSTALL_DIR: dirname(process.execPath) }
+    : {}
+
 export const updateCli = (): { scheduled: boolean } => {
   if (process.platform === 'win32') {
     const encoded = Buffer.from(installPowerShell, 'utf16le').toString('base64')
@@ -14,7 +20,7 @@ export const updateCli = (): { scheduled: boolean } => {
       {
         detached: true,
         stdio: 'ignore',
-        env: { ...process.env, EXTRABRAIN_WAIT_PID: String(process.pid) }
+        env: { ...process.env, ...installDirectory(), EXTRABRAIN_WAIT_PID: String(process.pid) }
       }
     )
     child.unref()
@@ -23,12 +29,7 @@ export const updateCli = (): { scheduled: boolean } => {
   const result = spawnSync('sh', ['-s'], {
     encoding: 'utf8',
     input: installShell,
-    env: {
-      ...process.env,
-      ...(isSea() && !process.env.EXTRABRAIN_INSTALL_DIR
-        ? { EXTRABRAIN_INSTALL_DIR: dirname(process.execPath) }
-        : {})
-    },
+    env: { ...process.env, ...installDirectory() },
     timeout: 120_000
   })
   if (result.error || result.status !== 0) {

@@ -62,6 +62,10 @@ jobs:
             target: darwin-arm64
           - runner: macos-15-intel
             target: darwin-x64
+          - runner: windows-2025
+            target: win32-x64
+          - runner: windows-11-arm
+            target: win32-arm64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7.0.1
@@ -72,6 +76,7 @@ jobs:
           node-version: 24.20.0
           cache: npm
       - name: Set release version
+        shell: bash
         env:
           RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
@@ -85,6 +90,7 @@ jobs:
       - name: Build executable
         run: npm run build:sea
       - name: Verify and archive macOS executable
+        if: startsWith(matrix.target, 'darwin-')
         shell: bash
         env:
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
@@ -99,6 +105,22 @@ jobs:
           test "$code" = 3
           echo "$result" | jq -e '.code == 3 and .message == "ExtraBrain is not running"'
           tar -czf "extrabrain-$RELEASE_TAG-$TARGET.tar.gz" -C dist extrabrain
+      - name: Verify and archive Windows executable
+        if: startsWith(matrix.target, 'win32-')
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          $actualVersion = & dist/extrabrain.exe --version
+          if ($LASTEXITCODE -ne 0 -or $actualVersion -ne $env:RELEASE_TAG.Substring(1)) { throw "Version mismatch: $actualVersion" }
+          $output = & dist/extrabrain.exe --json capabilities
+          $exitCode = $LASTEXITCODE
+          $result = $output | ConvertFrom-Json
+          if ($exitCode -ne 3 -or $result.code -ne 3 -or $result.message -ne 'ExtraBrain is not running') { throw "Capabilities contract failed: $output" }
+          Compress-Archive -LiteralPath dist/extrabrain.exe -DestinationPath "extrabrain-$env:RELEASE_TAG-$env:TARGET.zip"
+          exit 0
       - uses: actions/upload-artifact@v7.0.1
         with:
           name: ${{ matrix.target }}
@@ -147,4 +169,4 @@ jobs:
           set -euo pipefail
           cd release-assets
           sha256sum extrabrain-* > SHA256SUMS
-          gh release create "$RELEASE_TAG" extrabrain-* SHA256SUMS --title "$RELEASE_TAG" --notes "Unsigned macOS CLI release. This executable is not Developer ID signed or notarized." --verify-tag
+          gh release create "$RELEASE_TAG" extrabrain-* SHA256SUMS --title "$RELEASE_TAG" --notes "Unsigned CLI release for macOS and Windows. The macOS executables are not Developer ID signed or notarized, and the Windows executables are not Authenticode signed." --verify-tag

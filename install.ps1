@@ -17,6 +17,7 @@ $releaseBase = if ($env:EXTRABRAIN_RELEASE_BASE) { $env:EXTRABRAIN_RELEASE_BASE 
 $installDir = if ($env:EXTRABRAIN_INSTALL_DIR) { $env:EXTRABRAIN_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'ExtraBrain\bin' }
 $arch = switch ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()) {
   'X64' { 'x64' }
+  'Arm64' { 'arm64' }
   default { throw 'Unsupported architecture' }
 }
 if ($env:EXTRABRAIN_VERSION) {
@@ -33,11 +34,11 @@ $temporary = Join-Path ([IO.Path]::GetTempPath()) ("extrabrain-install-" + [guid
 try {
   $manifest = Join-Path $temporary 'SHA256SUMS'
   $archive = Join-Path $temporary $asset
-  Invoke-WebRequest "$releaseBase/download/$version/SHA256SUMS" -OutFile $manifest
-  Invoke-WebRequest "$releaseBase/download/$version/$asset" -OutFile $archive
-  $matches = @(Get-Content $manifest | Where-Object { $_ -match ('^[a-fA-F0-9]{64}  ' + [regex]::Escape($asset) + '$') })
-  if ($matches.Count -ne 1) { throw 'Release checksum is missing or invalid' }
-  $expected = $matches[0].Substring(0, 64).ToLowerInvariant()
+  Invoke-WebRequest "$releaseBase/download/$version/SHA256SUMS" -OutFile $manifest -UseBasicParsing
+  Invoke-WebRequest "$releaseBase/download/$version/$asset" -OutFile $archive -UseBasicParsing
+  $checksumLines = @(Get-Content $manifest | Where-Object { $_ -match ('^[a-fA-F0-9]{64}  ' + [regex]::Escape($asset) + '$') })
+  if ($checksumLines.Count -ne 1) { throw 'Release checksum is missing or invalid' }
+  $expected = $checksumLines[0].Substring(0, 64).ToLowerInvariant()
   $stream = [IO.File]::OpenRead($archive)
   $hasher = [Security.Cryptography.SHA256]::Create()
   try {

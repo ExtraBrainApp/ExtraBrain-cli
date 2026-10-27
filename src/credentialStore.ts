@@ -5,6 +5,7 @@ const SERVICE = 'ExtraBrain standalone CLI document automation'
 const ACCOUNT = 'local-api'
 const WINDOWS_SCRIPT = `
 $ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Security
 $path = Join-Path $env:LOCALAPPDATA 'ExtraBrain\\cli-credential.dat'
 try {
   if ($env:EXTRABRAIN_CLI_CREDENTIAL_ACTION -eq 'read') {

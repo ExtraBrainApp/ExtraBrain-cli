@@ -21,7 +21,7 @@ describe.skipIf(process.platform !== 'win32')('public Windows installer', () => 
     directories.push(directory)
     const installDir = join(directory, 'bin')
     const source = join(directory, 'extrabrain.exe')
-    const asset = 'extrabrain-v0.1.0-win32-x64.zip'
+    const asset = `extrabrain-v0.1.0-win32-${process.arch === 'arm64' ? 'arm64' : 'x64'}.zip`
     const archive = join(directory, asset)
     let checksum = ''
     const publish = async (content: string, valid = true) => {

@@ -1,18 +1,20 @@
 # ExtraBrain CLI
 
-The ExtraBrain CLI is a small add-on for the [ExtraBrain](https://extrabrain.app) Mac app. It lets you work with your ExtraBrain library by typing short commands in the Terminal instead of clicking through the app. It is also handy for AI assistants and scripts that need to read from or add to your library.
+The ExtraBrain CLI is a small add-on for the [ExtraBrain](https://extrabrain.app) app on Mac and Windows. It lets you work with your ExtraBrain library by typing short commands in Terminal (Mac) or PowerShell (Windows) instead of clicking through the app. It is also handy for AI assistants and scripts that need to read from or add to your library.
 
 To learn more about ExtraBrain itself, or to download the app, visit **[extrabrain.app](https://extrabrain.app)**.
 
-> **Good to know:** The CLI is a companion to the app, not a replacement. **ExtraBrain must be open and running** on your Mac whenever you use it. Everything stays on your computer; nothing is sent over the internet.
+> **Good to know:** The CLI is a companion to the app, not a replacement. **ExtraBrain must be open and running** on your computer whenever you use it. Everything stays on your computer; nothing is sent over the internet.
 
 ## What you need
 
-- A Mac (Apple Silicon or Intel).
+- A Mac (Apple Silicon or Intel), or a Windows 10 or 11 PC (Intel/AMD or ARM).
 - The ExtraBrain app, installed and open. Get it at [extrabrain.app](https://extrabrain.app).
 - About two minutes. You do not need to install anything else (no Node, no Python), and no administrator password.
 
 ## Install
+
+### Mac
 
 1. Open the **Terminal** app. (Press `⌘ Space`, type "Terminal", and press Return.)
 2. Copy the line below, paste it into Terminal, and press Return:
@@ -28,11 +30,35 @@ curl -fsSL https://raw.githubusercontent.com/ExtraBrainApp/ExtraBrain-cli/master
 extrabrain --version
 ```
 
-If you see a version number such as `0.1.7`, you are done.
+If you see a version number such as `0.1.8`, you are done.
 
 **If macOS blocks the program the first time:** this release is not yet signed by Apple, so macOS may ask for extra approval. Open **System Settings → Privacy & Security**, scroll down, and choose **Open Anyway** next to the message about `extrabrain`.
 
 **If Terminal says "command not found":** close every Terminal window and open a new one. The installer adds the command to your shell setup, and that only takes effect in new windows.
+
+### Windows
+
+1. Open **PowerShell**. (Press the Windows key, type "PowerShell", and press Enter.)
+2. Copy the line below, paste it into PowerShell, and press Enter:
+
+```powershell
+irm https://raw.githubusercontent.com/ExtraBrainApp/ExtraBrain-cli/master/install.ps1 | iex
+```
+
+3. When it finishes, **close PowerShell and open a new window**.
+4. Check that it worked:
+
+```powershell
+extrabrain --version
+```
+
+If you see a version number such as `0.1.8`, you are done.
+
+The installer puts `extrabrain.exe` in `%LOCALAPPDATA%\ExtraBrain\bin` and adds that folder to your user `PATH`. It works for both Intel/AMD and ARM PCs and picks the right version automatically.
+
+**If Windows shows "Windows protected your PC" or Microsoft Defender warns about the program:** this release is not yet signed by Microsoft, so Windows may ask for extra approval. Choose **More info → Run anyway**.
+
+**If PowerShell says "'extrabrain' is not recognized":** close every PowerShell and Command Prompt window and open a new one. The installer adds the command to your `PATH`, and that only takes effect in new windows.
 
 ### Update
 
@@ -40,12 +66,28 @@ If you see a version number such as `0.1.7`, you are done.
 extrabrain update
 ```
 
-Check the new version afterwards with `extrabrain --version`. Updating never happens automatically.
+Check the new version afterwards with `extrabrain --version`. On Windows the update finishes just after the command exits, so check the version with a new command. Updating never happens automatically.
 
 ### Uninstall
 
+On a Mac:
+
 ```sh
 rm ~/.local/bin/extrabrain
+```
+
+On Windows, in PowerShell:
+
+```powershell
+Remove-Item "$env:LOCALAPPDATA\ExtraBrain\bin\extrabrain.exe"
+```
+
+To also remove the folder from your `PATH` on Windows:
+
+```powershell
+$dir = "$env:LOCALAPPDATA\ExtraBrain\bin"
+$path = ([Environment]::GetEnvironmentVariable('Path', 'User') -split ';' | Where-Object { $_ -and $_ -ne $dir }) -join ';'
+[Environment]::SetEnvironmentVariable('Path', $path, 'User')
 ```
 
 This removes only the command. Your ExtraBrain app, documents, and settings are not touched.
@@ -53,7 +95,7 @@ This removes only the command. Your ExtraBrain app, documents, and settings are 
 ## Try it
 
 1. Open the ExtraBrain app.
-2. In Terminal, run:
+2. In Terminal (Mac) or PowerShell (Windows), run:
 
 ```sh
 extrabrain capabilities
@@ -63,7 +105,7 @@ If it lists what your app supports, everything is connected. If it says the app 
 
 ## What the CLI can do
 
-Think of these as its skills. Each one is a group of commands. Add `--json` right after `extrabrain` (for example `extrabrain --json documents list`) when a script or AI assistant needs machine-readable results.
+Think of these as its skills. Each one is a group of commands, and they work the same on Mac and Windows. Add `--json` right after `extrabrain` (for example `extrabrain --json documents list`) when a script or AI assistant needs machine-readable results.
 
 ### 1. Documents: add files to your library
 
@@ -164,22 +206,37 @@ Exports go to a **new** location and never overwrite existing files. They contai
 | --- | --- |
 | "App not running" (exit code `3`) | Open the ExtraBrain app, then try again. |
 | "Unsupported API version or capability" (exit code `8`) | Your app is too old, or that feature is turned off. Update ExtraBrain from [extrabrain.app](https://extrabrain.app). |
-| `command not found` | Close Terminal and open a new window. |
-| Wrong port | The CLI talks to the app on port `37373`. If your app uses another port, set `EXTRABRAIN_PORT` to that number. |
+| `command not found` (Mac) | Close Terminal and open a new window. |
+| `'extrabrain' is not recognized` (Windows) | Close PowerShell and open a new window. |
+| "Windows protected your PC" | Choose **More info → Run anyway**. The program is not yet signed by Microsoft. |
+| Wrong port | The CLI talks to the app on port `37373`. If your app uses another port, set `EXTRABRAIN_PORT` to that number (`export EXTRABRAIN_PORT=37374` on a Mac, `$env:EXTRABRAIN_PORT = 37374` in PowerShell). |
 
 ## Advanced
 
 <details>
 <summary>Installer options</summary>
 
+On a Mac:
+
 - **Install location:** by default the installer puts `extrabrain` in `~/.local/bin` and adds that folder to your shell setup (zsh and bash). Set `EXTRABRAIN_NO_MODIFY_PATH=1` to skip changing shell files, or `EXTRABRAIN_INSTALL_DIR=<folder>` to choose another folder.
 - **All users on the Mac:** run the installer with `EXTRABRAIN_INSTALL_DIR=/usr/local/bin`. It asks for an administrator password only when it needs one. Uninstall with `sudo rm /usr/local/bin/extrabrain`.
 - **A specific version:** set `EXTRABRAIN_VERSION=v0.1.1` (any release tag).
-- **Safety:** downloads are checked against the release's `SHA256SUMS` before anything is replaced.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/ExtraBrainApp/ExtraBrain-cli/master/install.sh | env EXTRABRAIN_INSTALL_DIR=/usr/local/bin bash
 ```
+
+On Windows:
+
+- **Install location:** by default the installer puts `extrabrain.exe` in `%LOCALAPPDATA%\ExtraBrain\bin` and adds that folder to your user `PATH`. Set `$env:EXTRABRAIN_INSTALL_DIR` to choose another folder; the installer then leaves `PATH` unchanged.
+- **A specific version:** set `$env:EXTRABRAIN_VERSION` to any release tag that includes Windows builds, as in the example below (replace `vX.Y.Z`). The setting lasts only for that PowerShell window, so open a new window afterwards.
+- **Requirements:** Windows PowerShell 5.1 (built into Windows 10 and 11) or PowerShell 7.
+
+```powershell
+$env:EXTRABRAIN_VERSION = 'vX.Y.Z'; irm https://raw.githubusercontent.com/ExtraBrainApp/ExtraBrain-cli/master/install.ps1 | iex
+```
+
+On both, downloads are checked against the release's `SHA256SUMS` before anything is replaced.
 
 </details>
 
@@ -189,6 +246,8 @@ curl -fsSL https://raw.githubusercontent.com/ExtraBrainApp/ExtraBrain-cli/master
 Use `--json` to get `{ "code": number, "data": object | null, "message": string }`. Exit codes: `0` success, `1` failure, `2` usage, `3` app not running, `4` authentication or revocation, `5` conflict, `6` partial batch, `7` protected storage unavailable, `8` unsupported API or capability.
 
 - The CLI talks to the app over a local-only connection (`127.0.0.1`) and needs no password or token. It never starts the app or reads its database.
+- `extrabrain pair` keeps its credential in the macOS Keychain on a Mac, or in a file protected with Windows DPAPI under `%LOCALAPPDATA%\ExtraBrain` on Windows. There is no plaintext fallback.
+- Interrupted imports are remembered in `~/.local/state/extrabrain/imports` on a Mac and `%LOCALAPPDATA%\ExtraBrain\state\imports` on Windows, so `documents resume` can continue them.
 - Put file paths that begin with `-` after `--`. Symlinks and non-regular files are rejected. The CLI reads files from its own filesystem, so a sandboxed or remote agent cannot import a desktop-only path.
 - Deleting requires one document ID and its current revision. On a revision conflict, read the document again and confirm with the user instead of retrying.
 - List commands accept `--limit` and `--cursor`; time filters (`--since`, `--until`) are Unix seconds. Follow `data.nextCursor` to page through results.
@@ -199,9 +258,14 @@ Use `--json` to get `{ "code": number, "data": object | null, "message": string 
 <details>
 <summary>Building from source</summary>
 
-Use Node 24.20.0 and npm 11.19.0. `npm ci`, `npm run typecheck`, and `npm test` validate the CLI; `npm run build:sea` creates a self-contained executable in `dist/`.
+Use Node 24.20.0 and npm 11.19.0. `npm ci`, `npm run typecheck`, and `npm test` validate the CLI; `npm run build:sea` creates a self-contained executable for your computer in `dist/`.
 
-To release, run the `Standalone CLI release` workflow on `master` and choose `patch`, `minor`, or `major`.
+To build for another platform, pass one or more targets: `npm run build:sea -- --target win32-x64 --target win32-arm64` (also `darwin-arm64` and `darwin-x64`). Each lands in `dist/<target>/`. The build downloads the matching official Node.js binary and checks it against the Node.js release's `SHA256SUMS`.
+
+- macOS executables must be built on a Mac (they are signed ad hoc with `codesign`).
+- Windows executables can be built anywhere. On Windows the build uses `signtool` from the Windows SDK when it finds it (or `EXTRABRAIN_SIGNTOOL_PATH`); elsewhere it needs `osslsigncode`.
+
+To release, run the `Standalone CLI release` workflow on `master` and choose `patch`, `minor`, or `major`. It builds and tests each executable natively on GitHub-hosted macOS (Apple Silicon and Intel) and Windows (x64 and ARM64) runners.
 
 </details>
 
