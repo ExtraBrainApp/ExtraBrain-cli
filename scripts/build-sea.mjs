@@ -65,11 +65,14 @@ const findSigntool = async () => {
   const kits = join(process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)', 'Windows Kits', '10', 'bin')
   const versions = existsSync(kits) ? await readdir(kits) : []
   versions.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
-  for (const version of versions) {
-    const tool = join(kits, version, process.arch === 'arm64' ? 'arm64' : 'x64', 'signtool.exe')
-    if (existsSync(tool)) return tool
+  // The x64 tool also runs on Windows on ARM through emulation.
+  for (const arch of [...new Set([process.arch === 'arm64' ? 'arm64' : 'x64', 'x64'])]) {
+    for (const version of versions) {
+      const tool = join(kits, version, arch, 'signtool.exe')
+      if (existsSync(tool)) return tool
+    }
   }
-  return 'signtool'
+  return undefined
 }
 
 // Copies the target's Node binary to the executable path without its signature.
@@ -81,7 +84,10 @@ const prepareExecutable = async (platform, base, executable) => {
     run('codesign', ['--remove-signature', executable])
   } else if (platform === 'win32' && process.platform === 'win32') {
     await copyFile(base, executable)
-    run(await findSigntool(), ['remove', '/s', executable])
+    const signtool = await findSigntool()
+    // Removing the signature is optional; without it postject warns about the stale signature.
+    if (signtool) run(signtool, ['remove', '/s', executable])
+    else console.warn('signtool.exe was not found; keeping the Node.js signature')
   } else if (platform === 'win32') {
     run(process.env.EXTRABRAIN_OSSLSIGNCODE_PATH ?? 'osslsigncode', ['remove-signature', '-in', base, '-out', executable])
   } else {

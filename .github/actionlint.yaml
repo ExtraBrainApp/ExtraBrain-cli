@@ -1,9 +1,0 @@
-self-hosted-runner:
-  labels:
-    - macmini
-    - macos-vm
-    # Per-job labels that route each job to the CodeBuild runner started for it.
-    - cli-ci-linux
-    - cli-release-prepare
-    - cli-release-windows
-    - cli-release-publish

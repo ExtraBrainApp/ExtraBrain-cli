@@ -263,9 +263,9 @@ Use Node 24.20.0 and npm 11.19.0. `npm ci`, `npm run typecheck`, and `npm test` 
 To build for another platform, pass one or more targets: `npm run build:sea -- --target win32-x64 --target win32-arm64` (also `darwin-arm64` and `darwin-x64`). Each lands in `dist/<target>/`. The build downloads the matching official Node.js binary and checks it against the Node.js release's `SHA256SUMS`.
 
 - macOS executables must be built on a Mac (they are signed ad hoc with `codesign`).
-- Windows executables can be built anywhere. On Windows the build uses `signtool` from the Windows SDK (or `EXTRABRAIN_SIGNTOOL_PATH`); elsewhere it needs `osslsigncode`. `scripts/build-windows.sh` does the whole Windows build in a Docker container.
+- Windows executables can be built anywhere. On Windows the build uses `signtool` from the Windows SDK when it finds it (or `EXTRABRAIN_SIGNTOOL_PATH`); elsewhere it needs `osslsigncode`.
 
-To release, run the `Standalone CLI release` workflow on `master` and choose `patch`, `minor`, or `major`. It runs on the ExtraBrain self-hosted runners: macOS archives are built in a disposable Tart VM on the shared Mac mini, and Windows archives are cross-built in Docker on Linux.
+To release, run the `Standalone CLI release` workflow on `master` and choose `patch`, `minor`, or `major`. It builds and tests each executable natively on GitHub-hosted macOS (Apple Silicon and Intel) and Windows (x64 and ARM64) runners.
 
 </details>
 
