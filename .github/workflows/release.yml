@@ -21,7 +21,10 @@ concurrency:
 
 jobs:
   prepare:
-    runs-on: ubuntu-24.04
+    # Each CodeBuild job has a label of its own, so a runner started for one job cannot take another.
+    runs-on:
+      - codebuild-extrabrain-ci-${{ github.run_id }}-${{ github.run_attempt }}
+      - cli-release-prepare
     outputs:
       base_sha: ${{ steps.version.outputs.base_sha }}
       version: ${{ steps.version.outputs.version }}
@@ -52,17 +55,19 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
-  build:
+  build-macos:
+    name: Build ${{ matrix.target }}
     needs: prepare
     strategy:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-15
-            target: darwin-arm64
-          - runner: macos-15-intel
-            target: darwin-x64
-    runs-on: ${{ matrix.runner }}
+          - target: darwin-arm64
+            arch: arm64
+          - target: darwin-x64
+            arch: x64
+    # The x64 executable is cross-built from the x64 Node release on the ARM64 Mac mini.
+    runs-on: [self-hosted, macOS, ARM64, macmini]
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -83,31 +88,64 @@ jobs:
       - name: Validate CLI
         run: npm run check
       - name: Build executable
-        run: npm run build:sea
+        run: npm run build:sea -- --target ${{ matrix.target }}
       - name: Verify and archive macOS executable
         shell: bash
         env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
           TARGET: ${{ matrix.target }}
+          ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
-          test "$(dist/extrabrain --version)" = "${RELEASE_TAG#v}"
-          set +e
-          result=$(dist/extrabrain --json capabilities)
-          code=$?
-          set -e
-          test "$code" = 3
-          echo "$result" | jq -e '.code == 3 and .message == "ExtraBrain is not running"'
-          tar -czf "extrabrain-$RELEASE_TAG-$TARGET.tar.gz" -C dist extrabrain
+          bash scripts/verify-macos.sh "dist/$TARGET/extrabrain" "$ARCH" "$RELEASE_VERSION"
+          tar -czf "extrabrain-$RELEASE_TAG-$TARGET.tar.gz" -C "dist/$TARGET" extrabrain
       - uses: actions/upload-artifact@v7.0.1
         with:
           name: ${{ matrix.target }}
-          path: extrabrain-${{ needs.prepare.outputs.tag }}-${{ matrix.target }}.*
+          path: extrabrain-${{ needs.prepare.outputs.tag }}-${{ matrix.target }}.tar.gz
+          if-no-files-found: error
+
+  build-windows:
+    name: Build win32-x64 and win32-arm64
+    needs: prepare
+    runs-on:
+      - codebuild-extrabrain-ci-${{ github.run_id }}-${{ github.run_attempt }}
+      - cli-release-windows
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.base_sha }}
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24.20.0
+          cache: npm
+      - name: Set release version
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          npm version "$RELEASE_VERSION" --no-git-tag-version --ignore-scripts
+          node scripts/check-release-version.mjs
+      - name: Install dependencies
+        run: npm ci
+      - name: Validate CLI
+        run: npm run check
+      - name: Cross-build, check, and archive Windows executables
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+        run: bash scripts/build-windows.sh
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: win32
+          path: extrabrain-${{ needs.prepare.outputs.tag }}-win32-*.zip
           if-no-files-found: error
 
   publish:
-    needs: [prepare, build]
-    runs-on: ubuntu-24.04
+    needs: [prepare, build-macos, build-windows]
+    runs-on:
+      - codebuild-extrabrain-ci-${{ github.run_id }}-${{ github.run_attempt }}
+      - cli-release-publish
     permissions:
       contents: write
     steps:
@@ -147,4 +185,4 @@ jobs:
           set -euo pipefail
           cd release-assets
           sha256sum extrabrain-* > SHA256SUMS
-          gh release create "$RELEASE_TAG" extrabrain-* SHA256SUMS --title "$RELEASE_TAG" --notes "Unsigned macOS CLI release. This executable is not Developer ID signed or notarized." --verify-tag
+          gh release create "$RELEASE_TAG" extrabrain-* SHA256SUMS --title "$RELEASE_TAG" --notes "Unsigned CLI release for macOS and Windows. The macOS executables are not Developer ID signed or notarized, and the Windows executables are not Authenticode signed." --verify-tag

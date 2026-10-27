@@ -29,7 +29,10 @@ export interface ResumeManifest {
   }
 }
 
-const defaultDirectory = (): string => join(homedir(), '.local', 'state', 'extrabrain', 'imports')
+const defaultDirectory = (): string =>
+  process.platform === 'win32' && process.env.LOCALAPPDATA
+    ? join(process.env.LOCALAPPDATA, 'ExtraBrain', 'state', 'imports')
+    : join(homedir(), '.local', 'state', 'extrabrain', 'imports')
 
 export class ResumeStore {
   private saveQueue: Promise<void> = Promise.resolve()
