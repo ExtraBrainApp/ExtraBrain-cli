@@ -265,7 +265,7 @@ To build for another platform, pass one or more targets: `npm run build:sea -- -
 - macOS executables must be built on a Mac (they are signed ad hoc with `codesign`).
 - Windows executables can be built anywhere. On Windows the build uses `signtool` from the Windows SDK (or `EXTRABRAIN_SIGNTOOL_PATH`); elsewhere it needs `osslsigncode`. `scripts/build-windows.sh` does the whole Windows build in a Docker container.
 
-To release, run the `Standalone CLI release` workflow on `master` and choose `patch`, `minor`, or `major`. It runs on the ExtraBrain self-hosted runners: macOS archives are built on the Mac mini, and Windows archives are cross-built on Linux.
+To release, run the `Standalone CLI release` workflow on `master` and choose `patch`, `minor`, or `major`. It runs on the ExtraBrain self-hosted runners: macOS archives are built in a disposable Tart VM on the shared Mac mini, and Windows archives are cross-built in Docker on Linux.
 
 </details>
 

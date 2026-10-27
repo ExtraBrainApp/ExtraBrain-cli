@@ -56,54 +56,36 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
   build-macos:
-    name: Build ${{ matrix.target }}
+    name: Build darwin-arm64 and darwin-x64
     needs: prepare
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: darwin-arm64
-            arch: arm64
-          - target: darwin-x64
-            arch: x64
-    # The x64 executable is cross-built from the x64 Node release on the ARM64 Mac mini.
-    runs-on: [self-hosted, macOS, ARM64, macmini]
+    # Builds in a disposable Tart VM; the x64 executable is cross-built from the x64 Node release.
+    runs-on: [self-hosted, macOS, ARM64, macmini, macos-vm]
+    permissions:
+      contents: read
+      packages: read
+    env:
+      TART_REGISTRY_HOSTNAME: ghcr.io
+      TART_REGISTRY_USERNAME: ${{ github.actor }}
+      TART_REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ needs.prepare.outputs.base_sha }}
-      - uses: actions/setup-node@v7.0.0
-        with:
-          node-version: 24.20.0
-          cache: npm
-      - name: Set release version
-        env:
-          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
-          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
-        run: |
-          npm version "$RELEASE_VERSION" --no-git-tag-version --ignore-scripts
-          node scripts/check-release-version.mjs
-      - name: Install dependencies
-        run: npm ci
-      - name: Validate CLI
-        run: npm run check
-      - name: Build executable
-        run: npm run build:sea -- --target ${{ matrix.target }}
-      - name: Verify and archive macOS executable
-        shell: bash
-        env:
-          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
-          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
-          TARGET: ${{ matrix.target }}
-          ARCH: ${{ matrix.arch }}
-        run: |
-          set -euo pipefail
-          bash scripts/verify-macos.sh "dist/$TARGET/extrabrain" "$ARCH" "$RELEASE_VERSION"
-          tar -czf "extrabrain-$RELEASE_TAG-$TARGET.tar.gz" -C "dist/$TARGET" extrabrain
+      - name: Start disposable macOS VM
+        run: bash scripts/tart-job.sh start
+      - name: Validate, build, verify, and archive macOS executables
+        run: bash scripts/tart-job.sh run "RELEASE_VERSION=$RELEASE_VERSION RELEASE_TAG=$RELEASE_TAG bash scripts/ci-macos.sh release"
+      - name: Copy archives from the VM
+        run: bash scripts/tart-job.sh fetch "extrabrain-$RELEASE_TAG-darwin-arm64.tar.gz" "extrabrain-$RELEASE_TAG-darwin-x64.tar.gz"
+      - name: Delete macOS VM
+        if: always()
+        run: bash scripts/tart-job.sh stop
       - uses: actions/upload-artifact@v7.0.1
         with:
-          name: ${{ matrix.target }}
-          path: extrabrain-${{ needs.prepare.outputs.tag }}-${{ matrix.target }}.tar.gz
+          name: darwin
+          path: extrabrain-${{ needs.prepare.outputs.tag }}-darwin-*.tar.gz
           if-no-files-found: error
 
   build-windows:

@@ -27,56 +27,23 @@ jobs:
         run: bash scripts/build-windows.sh
 
   validate-macos:
-    name: Validate macOS ${{ matrix.target }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: darwin-arm64
-            arch: arm64
-          - target: darwin-x64
-            arch: x64
-    runs-on: [self-hosted, macOS, ARM64, macmini]
+    name: Validate macOS in a Tart VM
+    # Runs for pushes only, so pull requests from forks never reach the shared Mac mini.
+    if: github.event_name == 'push'
+    runs-on: [self-hosted, macOS, ARM64, macmini, macos-vm]
+    permissions:
+      contents: read
+      packages: read
+    env:
+      TART_REGISTRY_HOSTNAME: ghcr.io
+      TART_REGISTRY_USERNAME: ${{ github.actor }}
+      TART_REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: actions/setup-node@v7.0.0
-        with:
-          node-version: 24.20.0
-          cache: npm
-      - run: npm ci
-      - if: matrix.arch == 'arm64'
-        run: npm run check
-      - name: Build executable
-        run: npm run build:sea -- --target ${{ matrix.target }}
-      - name: Smoke test macOS executable
-        run: bash scripts/verify-macos.sh "dist/${{ matrix.target }}/extrabrain" ${{ matrix.arch }} "$(node -p 'require("./package.json").version')"
-      - name: Test packaged executable updates
-        if: matrix.arch == 'arm64'
-        run: EXTRABRAIN_TEST_EXECUTABLE="$PWD/dist/${{ matrix.target }}/extrabrain" npm test -- test/install.test.ts
-      # Installs only into a temporary home, so the shared runner is left unchanged.
-      - name: Install macOS command for the current user
-        if: matrix.arch == 'arm64'
-        shell: bash
-        run: |
-          set -euo pipefail
-          version=$(node -p 'require("./package.json").version')
-          release="$RUNNER_TEMP/installer-releases/download/v$version"
-          mkdir -p "$release"
-          asset="extrabrain-v$version-${{ matrix.target }}.tar.gz"
-          tar -czf "$release/$asset" -C "dist/${{ matrix.target }}" extrabrain
-          (cd "$release" && shasum -a 256 "$asset" > SHA256SUMS)
-          install_home="$RUNNER_TEMP/installer-home"
-          rm -rf "$install_home"
-          mkdir -p "$install_home"
-          echo "EXTRABRAIN_TEST_HOME=$install_home" >> "$GITHUB_ENV"
-          cat install.sh | env HOME="$install_home" ZDOTDIR="$install_home" SHELL=/bin/zsh EXTRABRAIN_RELEASE_BASE="file://$RUNNER_TEMP/installer-releases" EXTRABRAIN_VERSION="v$version" EXTRABRAIN_INSTALL_DIR= bash
-      - name: Verify user installation in new terminals
-        if: matrix.arch == 'arm64'
-        shell: bash
-        run: |
-          set -euo pipefail
-          version=$(node -p 'require("./package.json").version')
-          for mode in -lc -ic; do
-            test "$(env HOME="$EXTRABRAIN_TEST_HOME" ZDOTDIR="$EXTRABRAIN_TEST_HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin /bin/zsh "$mode" 'extrabrain --version')" = "$version"
-          done
-          test "$(stat -f '%Su:%Lp' "$EXTRABRAIN_TEST_HOME/.local/bin/extrabrain")" = "$(id -un):755"
+      - name: Start disposable macOS VM
+        run: bash scripts/tart-job.sh start
+      - name: Validate, build, and test both macOS executables
+        run: bash scripts/tart-job.sh run 'bash scripts/ci-macos.sh ci'
+      - name: Delete macOS VM
+        if: always()
+        run: bash scripts/tart-job.sh stop
