@@ -92,7 +92,6 @@ export class DocumentApiClient {
       const response = await this.request(`${this.origin}${path}`, {
         ...init,
         headers,
-        signal: init.signal ?? AbortSignal.timeout(10_000),
         redirect: 'error'
       })
       if (response.ok) return response
@@ -141,7 +140,7 @@ export class DocumentApiClient {
   }
 
   discovery(): Promise<Record<string, unknown>> {
-    return this.json('/.well-known/extrabrain', {}, false)
+    return this.json('/.well-known/extrabrain', { signal: AbortSignal.timeout(10_000) }, false)
   }
 
   sessionAsset(sessionId: string, screenshotId: string, representation: string, snapshot: string): Promise<Response> {

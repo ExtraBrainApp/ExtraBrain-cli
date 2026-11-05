@@ -30,6 +30,7 @@ describe('connection recovery contract', () => {
     const request = vi.fn<typeof fetch>(async () => { throw Object.assign(new Error('denied'), { code: 'EPERM' }) })
     await expect(new DocumentApiClient(null, undefined, request).json('/api/v1/profiles/custom', { method: 'POST', body: '{}' })).rejects.toMatchObject({ code: 'LOCAL_ACCESS_BLOCKED' })
     expect(request).toHaveBeenCalledOnce()
+    expect(request.mock.calls[0]?.[1]?.signal).toBeUndefined()
   })
 
   it('handles cyclic and opaque errors without claiming the app stopped', async () => {
