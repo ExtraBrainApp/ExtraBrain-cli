@@ -101,7 +101,9 @@ This removes only the command. Your ExtraBrain app, documents, and settings are 
 extrabrain capabilities
 ```
 
-If it lists what your app supports, everything is connected. If it cannot connect, check the reported cause: the app may be stopped, MCP may be disabled, or your agent may need permission to access localhost.
+The CLI uses the local HTTP API; it does not use MCP or require MCP to be enabled. Enable CLI access in ExtraBrain Settings > Agent Skills.
+
+If it lists what your app supports, everything is connected. If it cannot connect, check the reported cause: the app may be stopped, CLI access may be disabled in Settings > Agent Skills, or your agent may need permission to access localhost.
 
 ## What the CLI can do
 
@@ -204,7 +206,7 @@ Exports go to a **new** location and never overwrite existing files. They contai
 
 | What you see | What to do |
 | --- | --- |
-| Connection unavailable (exit code `3`) | Inspect `data.error`: `LOCAL_ACCESS_BLOCKED` requires the agent’s normal local-network permission flow; `CONNECTION_REFUSED` requires checking the app, MCP, and port; `REQUEST_TIMEOUT` may be transient; `CONNECTION_FAILED` is inconclusive. Retry reads after recovery; inspect mutation state before replaying writes. |
+| Connection unavailable (exit code `3`) | Inspect `data.error`: `CLI_ACCESS_DISABLED` requires enabling CLI access in Settings > Agent Skills; `LOCAL_ACCESS_BLOCKED` requires the agent’s normal local-network permission flow; `CONNECTION_REFUSED` requires checking the app, CLI access, and port; `REQUEST_TIMEOUT` may be transient; `CONNECTION_FAILED` is inconclusive. Retry reads after recovery; inspect mutation state before replaying writes. |
 | "Unsupported API version or capability" (exit code `8`) | Your app is too old, or that feature is turned off. Update ExtraBrain from [extrabrain.app](https://extrabrain.app). |
 | `command not found` (Mac) | Close Terminal and open a new window. |
 | `'extrabrain' is not recognized` (Windows) | Close PowerShell and open a new window. |

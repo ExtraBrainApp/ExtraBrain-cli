@@ -26,6 +26,18 @@ describe('connection recovery contract', () => {
     expect(request).toHaveBeenCalledOnce()
   })
 
+  it('reports disabled CLI access without asking users to enable MCP', async () => {
+    const request = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ apiVersion: 'v1', available: false, capabilities: {} }), { status: 200 }))
+    const client = new DocumentApiClient(null, undefined, request)
+    const output: string[] = []
+    const deps = { apiFactory: () => client, output: { write: (value: string) => output.push(value), error: vi.fn() } } as unknown as CliDependencies
+    expect(await runCli(['--json', 'capabilities'], deps)).toBe(3)
+    expect(JSON.parse(output[0])).toMatchObject({ data: { error: 'CLI_ACCESS_DISABLED' } })
+    expect(output[0]).toContain('Settings > Agent Skills')
+    expect(output[0]).not.toContain('MCP')
+    expect(request).toHaveBeenCalledOnce()
+  })
+
   it('does not replay writes on blocked access', async () => {
     const request = vi.fn<typeof fetch>(async () => { throw Object.assign(new Error('denied'), { code: 'EPERM' }) })
     await expect(new DocumentApiClient(null, undefined, request).json('/api/v1/profiles/custom', { method: 'POST', body: '{}' })).rejects.toMatchObject({ code: 'LOCAL_ACCESS_BLOCKED' })

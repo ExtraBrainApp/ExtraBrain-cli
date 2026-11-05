@@ -121,7 +121,7 @@ export class DocumentApiClient {
         ? 'Access to ExtraBrain on localhost was blocked. Allow this command to access the local service through your agent permission flow.'
         : timedOut
           ? 'The connection to ExtraBrain timed out.'
-          : 'Could not reach ExtraBrain. Check that the app is running, MCP is enabled, and this command has permission to access localhost.'
+          : 'Could not reach ExtraBrain. Check that the app is running, CLI access is enabled in Settings > Agent Skills, and this command has permission to access localhost.'
       throw new CliApiError(code, message, null, { origin: this.origin, networkCodes: [...new Set(codes)] })
     }
   }
@@ -139,8 +139,12 @@ export class DocumentApiClient {
     return payload as Record<string, unknown>
   }
 
-  discovery(): Promise<Record<string, unknown>> {
-    return this.json('/.well-known/extrabrain', { signal: AbortSignal.timeout(10_000) }, false)
+  async discovery(): Promise<Record<string, unknown>> {
+    const result = await this.json('/.well-known/extrabrain', { signal: AbortSignal.timeout(10_000) }, false)
+    if (result.apiVersion === 'v1' && result.available === false) {
+      throw new CliApiError('CLI_ACCESS_DISABLED', 'CLI access is disabled. Enable CLI access in ExtraBrain Settings > Agent Skills.')
+    }
+    return result
   }
 
   sessionAsset(sessionId: string, screenshotId: string, representation: string, snapshot: string): Promise<Response> {
