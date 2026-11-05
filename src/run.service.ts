@@ -222,7 +222,9 @@ const mapError = (error: unknown): CliResult => {
   const message = error instanceof Error ? error.message : 'CLI command failed'
   if (error instanceof FileExpansionError) return { code: CliExitCode.USAGE, message }
   if (!(error instanceof CliApiError)) return { code: CliExitCode.USAGE, message }
-  if (error.code === 'APP_NOT_RUNNING') return { code: CliExitCode.APP_NOT_RUNNING, message }
+  if (['APP_NOT_RUNNING', 'LOCAL_ACCESS_BLOCKED', 'CONNECTION_REFUSED', 'CONNECTION_FAILED', 'REQUEST_TIMEOUT'].includes(error.code)) {
+    return { code: CliExitCode.APP_NOT_RUNNING, data: { error: error.code, details: error.details ?? null }, message }
+  }
   if (error.code === 'PROTECTED_STORAGE_UNAVAILABLE') {
     return { code: CliExitCode.PROTECTED_STORAGE_UNAVAILABLE, message }
   }

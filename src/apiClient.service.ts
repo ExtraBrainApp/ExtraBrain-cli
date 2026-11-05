@@ -92,6 +92,7 @@ export class DocumentApiClient {
       const response = await this.request(`${this.origin}${path}`, {
         ...init,
         headers,
+        signal: init.signal ?? AbortSignal.timeout(10_000),
         redirect: 'error'
       })
       if (response.ok) return response
@@ -101,7 +102,28 @@ export class DocumentApiClient {
       if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
         throw new CliApiError('REQUEST_TIMEOUT', 'ExtraBrain request timed out')
       }
-      throw new CliApiError('APP_NOT_RUNNING', 'ExtraBrain is not running')
+      const codes: string[] = []
+      const pending: unknown[] = [error]
+      const seen = new Set<unknown>()
+      while (pending.length && seen.size < 32) {
+        const item = pending.shift()
+        if (!item || typeof item !== 'object' || seen.has(item)) continue
+        seen.add(item)
+        const cause = item as { code?: unknown; cause?: unknown; errors?: unknown[] }
+        if (typeof cause.code === 'string') codes.push(cause.code)
+        pending.push(cause.cause)
+        if (Array.isArray(cause.errors)) pending.push(...cause.errors.slice(0, 32))
+      }
+      const blocked = codes.some((code) => code === 'EPERM' || code === 'EACCES')
+      const refused = codes.includes('ECONNREFUSED')
+      const timedOut = codes.some((code) => ['ETIMEDOUT', 'UND_ERR_CONNECT_TIMEOUT'].includes(code))
+      const code = blocked ? 'LOCAL_ACCESS_BLOCKED' : timedOut ? 'REQUEST_TIMEOUT' : refused ? 'CONNECTION_REFUSED' : 'CONNECTION_FAILED'
+      const message = blocked
+        ? 'Access to ExtraBrain on localhost was blocked. Allow this command to access the local service through your agent permission flow.'
+        : timedOut
+          ? 'The connection to ExtraBrain timed out.'
+          : 'Could not reach ExtraBrain. Check that the app is running, MCP is enabled, and this command has permission to access localhost.'
+      throw new CliApiError(code, message, null, { origin: this.origin, networkCodes: [...new Set(codes)] })
     }
   }
 

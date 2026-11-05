@@ -101,7 +101,7 @@ This removes only the command. Your ExtraBrain app, documents, and settings are 
 extrabrain capabilities
 ```
 
-If it lists what your app supports, everything is connected. If it says the app is not running, open ExtraBrain and try again.
+If it lists what your app supports, everything is connected. If it cannot connect, check the reported cause: the app may be stopped, MCP may be disabled, or your agent may need permission to access localhost.
 
 ## What the CLI can do
 
@@ -204,7 +204,7 @@ Exports go to a **new** location and never overwrite existing files. They contai
 
 | What you see | What to do |
 | --- | --- |
-| "App not running" (exit code `3`) | Open the ExtraBrain app, then try again. |
+| Connection unavailable (exit code `3`) | Inspect `data.error`: `LOCAL_ACCESS_BLOCKED` requires the agent’s normal local-network permission flow; `CONNECTION_REFUSED` requires checking the app, MCP, and port; `REQUEST_TIMEOUT` may be transient; `CONNECTION_FAILED` is inconclusive. Retry reads after recovery; inspect mutation state before replaying writes. |
 | "Unsupported API version or capability" (exit code `8`) | Your app is too old, or that feature is turned off. Update ExtraBrain from [extrabrain.app](https://extrabrain.app). |
 | `command not found` (Mac) | Close Terminal and open a new window. |
 | `'extrabrain' is not recognized` (Windows) | Close PowerShell and open a new window. |
@@ -243,7 +243,7 @@ On both, downloads are checked against the release's `SHA256SUMS` before anythin
 <details>
 <summary>For scripts and AI assistants</summary>
 
-Use `--json` to get `{ "code": number, "data": object | null, "message": string }`. Exit codes: `0` success, `1` failure, `2` usage, `3` app not running, `4` authentication or revocation, `5` conflict, `6` partial batch, `7` protected storage unavailable, `8` unsupported API or capability.
+Use `--json` to get `{ "code": number, "data": object | null, "message": string }`. Exit codes: `0` success, `1` failure, `2` usage, `3` connection unavailable (legacy `APP_NOT_RUNNING` numeric code), `4` authentication or revocation, `5` conflict, `6` partial batch, `7` protected storage unavailable, `8` unsupported API or capability.
 
 - The CLI talks to the app over a local-only connection (`127.0.0.1`) and needs no password or token. It never starts the app or reads its database.
 - `extrabrain pair` keeps its credential in the macOS Keychain on a Mac, or in a file protected with Windows DPAPI under `%LOCALAPPDATA%\ExtraBrain` on Windows. There is no plaintext fallback.
