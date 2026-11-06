@@ -1,5 +1,8 @@
 import { createReadStream } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
+import { collectNetworkCodes, describeConnectionFailure } from './connectionError.service'
+
+const DISCOVERY_TIMEOUT_MS = 10_000
 
 export const resolveApiOrigin = (port = process.env.EXTRABRAIN_PORT): string => {
   if (port === undefined || port === '') return 'http://127.0.0.1:37373'
@@ -101,28 +104,9 @@ export class DocumentApiClient {
       if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
         throw new CliApiError('REQUEST_TIMEOUT', 'ExtraBrain request timed out')
       }
-      const codes: string[] = []
-      const pending: unknown[] = [error]
-      const seen = new Set<unknown>()
-      while (pending.length && seen.size < 32) {
-        const item = pending.shift()
-        if (!item || typeof item !== 'object' || seen.has(item)) continue
-        seen.add(item)
-        const cause = item as { code?: unknown; cause?: unknown; errors?: unknown[] }
-        if (typeof cause.code === 'string') codes.push(cause.code)
-        pending.push(cause.cause)
-        if (Array.isArray(cause.errors)) pending.push(...cause.errors.slice(0, 32))
-      }
-      const blocked = codes.some((code) => code === 'EPERM' || code === 'EACCES')
-      const refused = codes.includes('ECONNREFUSED')
-      const timedOut = codes.some((code) => ['ETIMEDOUT', 'UND_ERR_CONNECT_TIMEOUT'].includes(code))
-      const code = blocked ? 'LOCAL_ACCESS_BLOCKED' : timedOut ? 'REQUEST_TIMEOUT' : refused ? 'CONNECTION_REFUSED' : 'CONNECTION_FAILED'
-      const message = blocked
-        ? 'Access to ExtraBrain on localhost was blocked. Allow this command to access the local service through your agent permission flow.'
-        : timedOut
-          ? 'The connection to ExtraBrain timed out.'
-          : 'Could not reach ExtraBrain. Check that the app is running, CLI access is enabled in Settings > Agent Skills, and this command has permission to access localhost.'
-      throw new CliApiError(code, message, null, { origin: this.origin, networkCodes: [...new Set(codes)] })
+      const networkCodes = collectNetworkCodes(error)
+      const { code, message } = describeConnectionFailure(networkCodes)
+      throw new CliApiError(code, message, null, { origin: this.origin, networkCodes })
     }
   }
 
@@ -140,7 +124,7 @@ export class DocumentApiClient {
   }
 
   async discovery(): Promise<Record<string, unknown>> {
-    const result = await this.json('/.well-known/extrabrain', { signal: AbortSignal.timeout(10_000) }, false)
+    const result = await this.json('/.well-known/extrabrain', { signal: AbortSignal.timeout(DISCOVERY_TIMEOUT_MS) }, false)
     if (result.apiVersion === 'v1' && result.available === false) {
       throw new CliApiError('CLI_ACCESS_DISABLED', 'CLI access is disabled. Enable CLI access in ExtraBrain Settings > Agent Skills.')
     }

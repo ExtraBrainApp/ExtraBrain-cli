@@ -1,5 +1,6 @@
 import { LocalPrincipalScope } from './scopes'
 import { CliApiError } from './apiClient.service'
+import { CONNECTION_ERROR_CODES } from './connectionError.service'
 import { executeDocumentsCommand } from './documentCommands.service'
 import { executeProfileCommand } from './profileCommands.service'
 import { FileExpansionError } from './fileExpansion.service'
@@ -222,7 +223,7 @@ const mapError = (error: unknown): CliResult => {
   const message = error instanceof Error ? error.message : 'CLI command failed'
   if (error instanceof FileExpansionError) return { code: CliExitCode.USAGE, message }
   if (!(error instanceof CliApiError)) return { code: CliExitCode.USAGE, message }
-  if (['APP_NOT_RUNNING', 'CLI_ACCESS_DISABLED', 'LOCAL_ACCESS_BLOCKED', 'CONNECTION_REFUSED', 'CONNECTION_FAILED', 'REQUEST_TIMEOUT'].includes(error.code)) {
+  if (CONNECTION_ERROR_CODES.has(error.code)) {
     return { code: CliExitCode.APP_NOT_RUNNING, data: { error: error.code, details: error.details ?? null }, message }
   }
   if (error.code === 'PROTECTED_STORAGE_UNAVAILABLE') {
