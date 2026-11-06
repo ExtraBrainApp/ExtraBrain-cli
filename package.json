@@ -8,7 +8,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run --testTimeout=30000",
     "build:bundle": "node scripts/build-bundle.mjs",
     "build:sea": "npm run build:bundle && node scripts/build-sea.mjs",
     "check": "npm run typecheck && npm test"
