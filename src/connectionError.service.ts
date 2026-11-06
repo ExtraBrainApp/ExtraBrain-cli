@@ -2,7 +2,9 @@ const MAX_VISITED_ERRORS = 32
 const BLOCKED_NETWORK_CODES = new Set(['EPERM', 'EACCES'])
 const TIMEOUT_NETWORK_CODES = new Set(['ETIMEDOUT', 'UND_ERR_CONNECT_TIMEOUT'])
 const UNREACHABLE_MESSAGE =
-  'Could not reach ExtraBrain. Check that the app is running, CLI access is enabled in Settings > Agent Skills, and this command has permission to access localhost.'
+  'Could not connect to ExtraBrain. Make sure the app is open and CLI access is on in Settings > Agent Skills.'
+
+export const REQUEST_TIMEOUT_MESSAGE = 'ExtraBrain took too long to respond.'
 
 /** Every CLI error code that means the local app could not be used, all reported as exit 3. */
 export const CONNECTION_ERROR_CODES: ReadonlySet<string> = new Set([
@@ -52,11 +54,11 @@ export const describeConnectionFailure = (networkCodes: string[]): ConnectionFai
     return {
       code: 'LOCAL_ACCESS_BLOCKED',
       message:
-        'Access to ExtraBrain on localhost was blocked. Allow this command to access the local service through your agent permission flow.'
+        'This command was blocked from connecting to ExtraBrain. If an AI assistant ran it, allow the connection when asked, then try again.'
     }
   }
   if (networkCodes.some((code) => TIMEOUT_NETWORK_CODES.has(code))) {
-    return { code: 'REQUEST_TIMEOUT', message: 'The connection to ExtraBrain timed out.' }
+    return { code: 'REQUEST_TIMEOUT', message: REQUEST_TIMEOUT_MESSAGE }
   }
   if (networkCodes.includes('ECONNREFUSED')) {
     return { code: 'CONNECTION_REFUSED', message: UNREACHABLE_MESSAGE }

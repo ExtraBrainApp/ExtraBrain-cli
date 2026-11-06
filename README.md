@@ -9,7 +9,7 @@ To learn more about ExtraBrain itself, or to download the app, visit **[extrabra
 ## What you need
 
 - A Mac (Apple Silicon or Intel), or a Windows 10 or 11 PC (Intel/AMD or ARM).
-- The ExtraBrain app, installed and open. Get it at [extrabrain.app](https://extrabrain.app).
+- The ExtraBrain app, installed and open, with **CLI access** turned on in Settings > Agent Skills. Get the app at [extrabrain.app](https://extrabrain.app).
 - About two minutes. You do not need to install anything else (no Node, no Python), and no administrator password.
 
 ## Install
@@ -94,16 +94,14 @@ This removes only the command. Your ExtraBrain app, documents, and settings are 
 
 ## Try it
 
-1. Open the ExtraBrain app.
+1. Open the ExtraBrain app and turn on **CLI access** in Settings > Agent Skills.
 2. In Terminal (Mac) or PowerShell (Windows), run:
 
 ```sh
 extrabrain capabilities
 ```
 
-The CLI uses the local HTTP API; it does not use MCP or require MCP to be enabled. Enable CLI access in ExtraBrain Settings > Agent Skills.
-
-If it lists what your app supports, everything is connected. If it cannot connect, check the reported cause: the app may be stopped, CLI access may be disabled in Settings > Agent Skills, or your agent may need permission to access localhost.
+If it lists what your app supports, everything is connected. If not, the message tells you what to fix.
 
 ## What the CLI can do
 
@@ -206,7 +204,7 @@ Exports go to a **new** location and never overwrite existing files. They contai
 
 | What you see | What to do |
 | --- | --- |
-| Connection unavailable (exit code `3`) | Inspect `data.error`: `CLI_ACCESS_DISABLED` requires enabling CLI access in Settings > Agent Skills; `LOCAL_ACCESS_BLOCKED` requires the agent’s normal local-network permission flow; `CONNECTION_REFUSED` requires checking the app, CLI access, and port; `REQUEST_TIMEOUT` may be transient; `CONNECTION_FAILED` is inconclusive. Retry reads after recovery; inspect mutation state before replaying writes. |
+| "Could not connect to ExtraBrain" (exit code `3`) | Make sure the app is open and CLI access is on in Settings > Agent Skills. If an AI assistant ran the command, allow the connection when it asks. |
 | "Unsupported API version or capability" (exit code `8`) | Your app is too old, or that feature is turned off. Update ExtraBrain from [extrabrain.app](https://extrabrain.app). |
 | `command not found` (Mac) | Close Terminal and open a new window. |
 | `'extrabrain' is not recognized` (Windows) | Close PowerShell and open a new window. |
@@ -245,9 +243,10 @@ On both, downloads are checked against the release's `SHA256SUMS` before anythin
 <details>
 <summary>For scripts and AI assistants</summary>
 
-Use `--json` to get `{ "code": number, "data": object | null, "message": string }`. Exit codes: `0` success, `1` failure, `2` usage, `3` connection unavailable (legacy `APP_NOT_RUNNING` numeric code), `4` authentication or revocation, `5` conflict, `6` partial batch, `7` protected storage unavailable, `8` unsupported API or capability.
+Use `--json` to get `{ "code": number, "data": object | null, "message": string }`. Exit codes: `0` success, `1` failure, `2` usage, `3` cannot connect to the app, `4` authentication or revocation, `5` conflict, `6` partial batch, `7` protected storage unavailable, `8` unsupported API or capability.
 
 - The CLI talks to the app over a local-only connection (`127.0.0.1`) and needs no password or token. It never starts the app or reads its database.
+- On exit `3`, `data.error` says why: `CLI_ACCESS_DISABLED`, `LOCAL_ACCESS_BLOCKED`, `CONNECTION_REFUSED`, `REQUEST_TIMEOUT`, or `CONNECTION_FAILED`. Retry reads once it is fixed. Check whether a change went through before repeating it.
 - `extrabrain pair` keeps its credential in the macOS Keychain on a Mac, or in a file protected with Windows DPAPI under `%LOCALAPPDATA%\ExtraBrain` on Windows. There is no plaintext fallback.
 - Interrupted imports are remembered in `~/.local/state/extrabrain/imports` on a Mac and `%LOCALAPPDATA%\ExtraBrain\state\imports` on Windows, so `documents resume` can continue them.
 - Put file paths that begin with `-` after `--`. Symlinks and non-regular files are rejected. The CLI reads files from its own filesystem, so a sandboxed or remote agent cannot import a desktop-only path.

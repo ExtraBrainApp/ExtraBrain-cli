@@ -51,7 +51,7 @@ Commands:
   update
   --version
 
-Exit codes: 0 success, 1 failure, 2 usage, 3 APP_NOT_RUNNING,
+Exit codes: 0 success, 1 failure, 2 usage, 3 cannot connect to the app,
 4 authentication or revocation, 5 conflict, 6 partial success,
 7 protected storage unavailable, 8 unsupported or unavailable.`
 

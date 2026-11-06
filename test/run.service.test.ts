@@ -153,7 +153,7 @@ describe('ExtraBrain CLI contract', () => {
     const harness = await createHarness({})
 
     await expect(runCli(['help'], harness.dependencies)).resolves.toBe(CliExitCode.SUCCESS)
-    expect(harness.written[0]).toContain('3 APP_NOT_RUNNING')
+    expect(harness.written[0]).toContain('3 cannot connect to the app')
     expect(harness.written[0]).toContain('pair [--scope <scope>]...')
     expect(harness.written[0]).toContain('documents delete --revision')
     await expect(runCli(['--version'], harness.dependencies)).resolves.toBe(CliExitCode.SUCCESS)
