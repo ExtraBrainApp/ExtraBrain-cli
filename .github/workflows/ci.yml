@@ -38,7 +38,7 @@ jobs:
           code=$?
           set -e
           test "$code" = 3
-          echo "$result" | jq -e '.code == 3'
+          echo "$result" | jq -e '.code == 3 and .data.error == "CONNECTION_REFUSED"'
       - name: Install macOS command for the current user
         shell: bash
         run: |
@@ -121,7 +121,7 @@ jobs:
           $output = & dist/extrabrain.exe --json capabilities
           $exitCode = $LASTEXITCODE
           $result = $output | ConvertFrom-Json
-          if ($exitCode -ne 3 -or $result.code -ne 3) { throw "Capabilities contract failed: $output" }
+          if ($exitCode -ne 3 -or $result.code -ne 3 -or $result.data.error -ne 'CONNECTION_REFUSED') { throw "Capabilities contract failed: $output" }
           exit 0
       - name: Install Windows command for the current user
         shell: pwsh

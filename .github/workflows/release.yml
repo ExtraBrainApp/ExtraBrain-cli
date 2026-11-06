@@ -103,7 +103,7 @@ jobs:
           code=$?
           set -e
           test "$code" = 3
-          echo "$result" | jq -e '.code == 3 and .message == "ExtraBrain is not running"'
+          echo "$result" | jq -e '.code == 3 and .data.error == "CONNECTION_REFUSED"'
           tar -czf "extrabrain-$RELEASE_TAG-$TARGET.tar.gz" -C dist extrabrain
       - name: Verify and archive Windows executable
         if: startsWith(matrix.target, 'win32-')
@@ -118,7 +118,7 @@ jobs:
           $output = & dist/extrabrain.exe --json capabilities
           $exitCode = $LASTEXITCODE
           $result = $output | ConvertFrom-Json
-          if ($exitCode -ne 3 -or $result.code -ne 3 -or $result.message -ne 'ExtraBrain is not running') { throw "Capabilities contract failed: $output" }
+          if ($exitCode -ne 3 -or $result.code -ne 3 -or $result.data.error -ne 'CONNECTION_REFUSED') { throw "Capabilities contract failed: $output" }
           Compress-Archive -LiteralPath dist/extrabrain.exe -DestinationPath "extrabrain-$env:RELEASE_TAG-$env:TARGET.zip"
           exit 0
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

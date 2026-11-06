@@ -1,5 +1,8 @@
 import { createReadStream } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
+import { collectNetworkCodes, describeConnectionFailure, REQUEST_TIMEOUT_MESSAGE } from './connectionError.service'
+
+const DISCOVERY_TIMEOUT_MS = 10_000
 
 export const resolveApiOrigin = (port = process.env.EXTRABRAIN_PORT): string => {
   if (port === undefined || port === '') return 'http://127.0.0.1:37373'
@@ -99,9 +102,11 @@ export class DocumentApiClient {
     } catch (error) {
       if (error instanceof CliApiError) throw error
       if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
-        throw new CliApiError('REQUEST_TIMEOUT', 'ExtraBrain request timed out')
+        throw new CliApiError('REQUEST_TIMEOUT', REQUEST_TIMEOUT_MESSAGE)
       }
-      throw new CliApiError('APP_NOT_RUNNING', 'ExtraBrain is not running')
+      const networkCodes = collectNetworkCodes(error)
+      const { code, message } = describeConnectionFailure(networkCodes)
+      throw new CliApiError(code, message, null, { origin: this.origin, networkCodes })
     }
   }
 
@@ -118,8 +123,12 @@ export class DocumentApiClient {
     return payload as Record<string, unknown>
   }
 
-  discovery(): Promise<Record<string, unknown>> {
-    return this.json('/.well-known/extrabrain', {}, false)
+  async discovery(): Promise<Record<string, unknown>> {
+    const result = await this.json('/.well-known/extrabrain', { signal: AbortSignal.timeout(DISCOVERY_TIMEOUT_MS) }, false)
+    if (result.apiVersion === 'v1' && result.available === false) {
+      throw new CliApiError('CLI_ACCESS_DISABLED', 'CLI access is off. Turn it on in ExtraBrain under Settings > Agent Skills.')
+    }
+    return result
   }
 
   sessionAsset(sessionId: string, screenshotId: string, representation: string, snapshot: string): Promise<Response> {
