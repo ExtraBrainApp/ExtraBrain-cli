@@ -19,7 +19,7 @@ import {
 const HELP = `Usage: extrabrain [--json] <command>
 
 Commands:
-  pair [--scope <scope>]...
+  pair [--scope <scope>]...  (older app versions only)
   capabilities
   documents import [--group <name> | --group-id <id>] [--recursive] [--] <files-or-directories...>
   documents resume <resume-id>
@@ -164,6 +164,13 @@ const getPairingScopes = (scopeFlag: string | true | undefined): readonly string
   return requested
 }
 
+// Current apps retired the pairing routes and accept the CLI without a credential.
+const PAIRING_NOT_NEEDED: CliResult = {
+  code: CliExitCode.SUCCESS,
+  data: { paired: false, pairingRequired: false },
+  message: 'This version of ExtraBrain needs no pairing. You can use the CLI now.'
+}
+
 const pair = async (
   dependencies: CliDependencies,
   scopeFlag: string | true | undefined
@@ -187,11 +194,17 @@ const pair = async (
       })
     )
   ])
-  const payload = await publicClient.pair({
-    clientName: 'ExtraBrain CLI',
-    clientVersion: CLI_VERSION,
-    scopes
-  })
+  let payload: Awaited<ReturnType<DocumentApiClient['pair']>>
+  try {
+    payload = await publicClient.pair({
+      clientName: 'ExtraBrain CLI',
+      clientVersion: CLI_VERSION,
+      scopes
+    })
+  } catch (error) {
+    if (error instanceof CliApiError && error.status === 404) return PAIRING_NOT_NEEDED
+    throw error
+  }
   const token = payload.token
   if (typeof token !== 'string' || !token) {
     throw new CliApiError('INVALID_RESPONSE', 'Pairing did not return a credential')

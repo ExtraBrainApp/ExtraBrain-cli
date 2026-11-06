@@ -97,6 +97,17 @@ describe('ExtraBrain CLI contract', () => {
     expect(pair).not.toHaveBeenCalled()
   })
 
+  it('explains that current apps need no pairing', async () => {
+    const pair = vi.fn(async () => {
+      throw new CliApiError('NOT_FOUND', 'Not found', 404)
+    })
+    const harness = await createHarness({ pair })
+
+    await expect(runCli(['pair'], harness.dependencies)).resolves.toBe(CliExitCode.SUCCESS)
+    expect(harness.written[0]).toContain('needs no pairing')
+    expect(harness.dependencies.credentialStore.write).not.toHaveBeenCalled()
+  })
+
   it('pairs with least-privilege defaults and requires explicit elevated scopes', async () => {
     const defaultPair = vi.fn(async () => ({
       principalId: 'default-principal',
