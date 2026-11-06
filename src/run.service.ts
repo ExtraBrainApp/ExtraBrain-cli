@@ -1,5 +1,5 @@
 import { LocalPrincipalScope } from './scopes'
-import { CliApiError } from './apiClient.service'
+import { CliApiError, type DocumentApiClient } from './apiClient.service'
 import { CONNECTION_ERROR_CODES } from './connectionError.service'
 import { executeDocumentsCommand } from './documentCommands.service'
 import { executeProfileCommand } from './profileCommands.service'
