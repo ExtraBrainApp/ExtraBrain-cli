@@ -97,6 +97,17 @@ describe('ExtraBrain CLI contract', () => {
     expect(pair).not.toHaveBeenCalled()
   })
 
+  it('explains that current apps need no pairing', async () => {
+    const pair = vi.fn(async () => {
+      throw new CliApiError('NOT_FOUND', 'Not found', 404)
+    })
+    const harness = await createHarness({ pair })
+
+    await expect(runCli(['pair'], harness.dependencies)).resolves.toBe(CliExitCode.SUCCESS)
+    expect(harness.written[0]).toContain('needs no pairing')
+    expect(harness.dependencies.credentialStore.write).not.toHaveBeenCalled()
+  })
+
   it('pairs with least-privilege defaults and requires explicit elevated scopes', async () => {
     const defaultPair = vi.fn(async () => ({
       principalId: 'default-principal',
@@ -153,7 +164,7 @@ describe('ExtraBrain CLI contract', () => {
     const harness = await createHarness({})
 
     await expect(runCli(['help'], harness.dependencies)).resolves.toBe(CliExitCode.SUCCESS)
-    expect(harness.written[0]).toContain('3 APP_NOT_RUNNING')
+    expect(harness.written[0]).toContain('3 cannot connect to the app')
     expect(harness.written[0]).toContain('pair [--scope <scope>]...')
     expect(harness.written[0]).toContain('documents delete --revision')
     await expect(runCli(['--version'], harness.dependencies)).resolves.toBe(CliExitCode.SUCCESS)

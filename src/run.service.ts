@@ -1,5 +1,6 @@
 import { LocalPrincipalScope } from './scopes'
-import { CliApiError } from './apiClient.service'
+import { CliApiError, type DocumentApiClient } from './apiClient.service'
+import { CONNECTION_ERROR_CODES } from './connectionError.service'
 import { executeDocumentsCommand } from './documentCommands.service'
 import { executeProfileCommand } from './profileCommands.service'
 import { FileExpansionError } from './fileExpansion.service'
@@ -18,7 +19,7 @@ import {
 const HELP = `Usage: extrabrain [--json] <command>
 
 Commands:
-  pair [--scope <scope>]...
+  pair [--scope <scope>]...  (older app versions only)
   capabilities
   documents import [--group <name> | --group-id <id>] [--recursive] [--] <files-or-directories...>
   documents resume <resume-id>
@@ -50,7 +51,7 @@ Commands:
   update
   --version
 
-Exit codes: 0 success, 1 failure, 2 usage, 3 APP_NOT_RUNNING,
+Exit codes: 0 success, 1 failure, 2 usage, 3 cannot connect to the app,
 4 authentication or revocation, 5 conflict, 6 partial success,
 7 protected storage unavailable, 8 unsupported or unavailable.`
 
@@ -163,6 +164,13 @@ const getPairingScopes = (scopeFlag: string | true | undefined): readonly string
   return requested
 }
 
+// Current apps retired the pairing routes and accept the CLI without a credential.
+const PAIRING_NOT_NEEDED: CliResult = {
+  code: CliExitCode.SUCCESS,
+  data: { paired: false, pairingRequired: false },
+  message: 'This version of ExtraBrain needs no pairing. You can use the CLI now.'
+}
+
 const pair = async (
   dependencies: CliDependencies,
   scopeFlag: string | true | undefined
@@ -186,11 +194,17 @@ const pair = async (
       })
     )
   ])
-  const payload = await publicClient.pair({
-    clientName: 'ExtraBrain CLI',
-    clientVersion: CLI_VERSION,
-    scopes
-  })
+  let payload: Awaited<ReturnType<DocumentApiClient['pair']>>
+  try {
+    payload = await publicClient.pair({
+      clientName: 'ExtraBrain CLI',
+      clientVersion: CLI_VERSION,
+      scopes
+    })
+  } catch (error) {
+    if (error instanceof CliApiError && error.status === 404) return PAIRING_NOT_NEEDED
+    throw error
+  }
   const token = payload.token
   if (typeof token !== 'string' || !token) {
     throw new CliApiError('INVALID_RESPONSE', 'Pairing did not return a credential')
@@ -222,7 +236,9 @@ const mapError = (error: unknown): CliResult => {
   const message = error instanceof Error ? error.message : 'CLI command failed'
   if (error instanceof FileExpansionError) return { code: CliExitCode.USAGE, message }
   if (!(error instanceof CliApiError)) return { code: CliExitCode.USAGE, message }
-  if (error.code === 'APP_NOT_RUNNING') return { code: CliExitCode.APP_NOT_RUNNING, message }
+  if (CONNECTION_ERROR_CODES.has(error.code)) {
+    return { code: CliExitCode.APP_NOT_RUNNING, data: { error: error.code, details: error.details ?? null }, message }
+  }
   if (error.code === 'PROTECTED_STORAGE_UNAVAILABLE') {
     return { code: CliExitCode.PROTECTED_STORAGE_UNAVAILABLE, message }
   }

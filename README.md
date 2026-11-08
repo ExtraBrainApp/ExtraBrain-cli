@@ -4,12 +4,12 @@ The ExtraBrain CLI is a small add-on for the [ExtraBrain](https://extrabrain.app
 
 To learn more about ExtraBrain itself, or to download the app, visit **[extrabrain.app](https://extrabrain.app)**.
 
-> **Good to know:** The CLI is a companion to the app, not a replacement. **ExtraBrain must be open and running** on your computer whenever you use it. Everything stays on your computer; nothing is sent over the internet.
+> **Good to know:** The CLI is a companion to the app, not a replacement. **ExtraBrain must be open and running** on your computer whenever you use it. The CLI only talks to the app on your computer and does not send your data anywhere itself. The app may still send excerpts to the AI provider you chose.
 
 ## What you need
 
 - A Mac (Apple Silicon or Intel), or a Windows 10 or 11 PC (Intel/AMD or ARM).
-- The ExtraBrain app, installed and open. Get it at [extrabrain.app](https://extrabrain.app).
+- The ExtraBrain app, installed and open, with **CLI access** turned on in Settings > Agent Skills. Get the app at [extrabrain.app](https://extrabrain.app).
 - About two minutes. You do not need to install anything else (no Node, no Python), and no administrator password.
 
 ## Install
@@ -30,7 +30,7 @@ curl -fsSL https://raw.githubusercontent.com/ExtraBrainApp/ExtraBrain-cli/master
 extrabrain --version
 ```
 
-If you see a version number such as `0.1.8`, you are done.
+If you see a version number, you are done.
 
 **If macOS blocks the program the first time:** this release is not yet signed by Apple, so macOS may ask for extra approval. Open **System Settings → Privacy & Security**, scroll down, and choose **Open Anyway** next to the message about `extrabrain`.
 
@@ -52,7 +52,7 @@ irm https://raw.githubusercontent.com/ExtraBrainApp/ExtraBrain-cli/master/instal
 extrabrain --version
 ```
 
-If you see a version number such as `0.1.8`, you are done.
+If you see a version number, you are done.
 
 The installer puts `extrabrain.exe` in `%LOCALAPPDATA%\ExtraBrain\bin` and adds that folder to your user `PATH`. It works for both Intel/AMD and ARM PCs and picks the right version automatically.
 
@@ -94,18 +94,18 @@ This removes only the command. Your ExtraBrain app, documents, and settings are 
 
 ## Try it
 
-1. Open the ExtraBrain app.
+1. Open the ExtraBrain app and turn on **CLI access** in Settings > Agent Skills.
 2. In Terminal (Mac) or PowerShell (Windows), run:
 
 ```sh
 extrabrain capabilities
 ```
 
-If it lists what your app supports, everything is connected. If it says the app is not running, open ExtraBrain and try again.
+If it lists what your app supports, everything is connected. If not, the message tells you what to fix.
 
 ## What the CLI can do
 
-Think of these as its skills. Each one is a group of commands, and they work the same on Mac and Windows. Add `--json` right after `extrabrain` (for example `extrabrain --json documents list`) when a script or AI assistant needs machine-readable results.
+The commands come in groups, and they work the same on Mac and Windows. Add `--json` right after `extrabrain` (for example `extrabrain --json documents list`) when a script or AI assistant needs machine-readable results.
 
 ### 1. Documents: add files to your library
 
@@ -136,7 +136,7 @@ Put related files together under one name, such as "Acme interview".
 | --- | --- |
 | `extrabrain documents list` | Lists every document in your library. |
 | `extrabrain documents search --limit 10 "release risks"` | Searches your documents for words or phrases. |
-| `extrabrain documents text <document-id>` | Prints the text ExtraBrain extracted from a document. |
+| `extrabrain documents text --generation <n> <document-id>` | Prints the text ExtraBrain extracted from a document. Get the number from `indexGeneration` in `extrabrain --json documents list`. |
 
 ### 4. Export and delete documents
 
@@ -159,7 +159,7 @@ Profiles are saved setups (a name, instructions, and quick actions) that shape h
 | `extrabrain profiles auto` | Lets ExtraBrain choose the profile automatically again. |
 | `extrabrain profiles actions list system assistant` | Lists a profile's quick actions (you can also create, edit, reorder, and delete them). |
 
-This skill needs a recent version of the app. If a profiles command says it is unsupported, update ExtraBrain from [extrabrain.app](https://extrabrain.app). Some profile features are part of ExtraBrain Pro.
+These commands need a recent version of the app. If a profiles command says it is unsupported, update ExtraBrain from [extrabrain.app](https://extrabrain.app). Some profile features are part of ExtraBrain Pro.
 
 ### 6. Sessions: look back at past meetings and interviews
 
@@ -177,10 +177,10 @@ Read-only access to what ExtraBrain recorded during your sessions. It never chan
 | `extrabrain sessions topics <session-id>` | Shows the topics discussed. |
 | `extrabrain sessions questions <session-id>` | Shows the questions that came up. |
 | `extrabrain sessions chat-turns <session-id>` | Shows your chat with ExtraBrain during the session. |
-| `extrabrain sessions insights <session-id>` | Shows the insights ExtraBrain generated. |
+| `extrabrain sessions insights <session-id>` | Shows saved insights from older sessions. ExtraBrain no longer creates new ones. |
 | `extrabrain sessions analyses list <session-id>` | Lists the analyses ExtraBrain ran. |
 
-This skill needs a recent version of the app. If a sessions command says it is unsupported, update ExtraBrain from [extrabrain.app](https://extrabrain.app).
+These commands need a recent version of the app. If a sessions command says it is unsupported, update ExtraBrain from [extrabrain.app](https://extrabrain.app).
 
 ### 7. Session exports: save a session to a folder
 
@@ -204,7 +204,7 @@ Exports go to a **new** location and never overwrite existing files. They contai
 
 | What you see | What to do |
 | --- | --- |
-| "App not running" (exit code `3`) | Open the ExtraBrain app, then try again. |
+| "Could not connect to ExtraBrain" (exit code `3`) | Make sure the app is open and CLI access is on in Settings > Agent Skills. If an AI assistant ran the command, allow the connection when it asks. |
 | "Unsupported API version or capability" (exit code `8`) | Your app is too old, or that feature is turned off. Update ExtraBrain from [extrabrain.app](https://extrabrain.app). |
 | `command not found` (Mac) | Close Terminal and open a new window. |
 | `'extrabrain' is not recognized` (Windows) | Close PowerShell and open a new window. |
@@ -243,10 +243,11 @@ On both, downloads are checked against the release's `SHA256SUMS` before anythin
 <details>
 <summary>For scripts and AI assistants</summary>
 
-Use `--json` to get `{ "code": number, "data": object | null, "message": string }`. Exit codes: `0` success, `1` failure, `2` usage, `3` app not running, `4` authentication or revocation, `5` conflict, `6` partial batch, `7` protected storage unavailable, `8` unsupported API or capability.
+Use `--json` to get `{ "code": number, "data": object | null, "message": string }`. Exit codes: `0` success, `1` failure, `2` usage, `3` cannot connect to the app, `4` authentication or revocation, `5` conflict, `6` partial batch, `7` protected storage unavailable, `8` unsupported API or capability.
 
 - The CLI talks to the app over a local-only connection (`127.0.0.1`) and needs no password or token. It never starts the app or reads its database.
-- `extrabrain pair` keeps its credential in the macOS Keychain on a Mac, or in a file protected with Windows DPAPI under `%LOCALAPPDATA%\ExtraBrain` on Windows. There is no plaintext fallback.
+- On exit `3`, `data.error` says why: `CLI_ACCESS_DISABLED`, `LOCAL_ACCESS_BLOCKED`, `CONNECTION_REFUSED`, `REQUEST_TIMEOUT`, or `CONNECTION_FAILED`. Retry reads once it is fixed. Check whether a change went through before repeating it.
+- Current versions of the app need no pairing. `extrabrain pair` is only for older versions, where it keeps its credential in the macOS Keychain on a Mac, or in a file protected with Windows DPAPI under `%LOCALAPPDATA%\ExtraBrain` on Windows. There is no plaintext fallback.
 - Interrupted imports are remembered in `~/.local/state/extrabrain/imports` on a Mac and `%LOCALAPPDATA%\ExtraBrain\state\imports` on Windows, so `documents resume` can continue them.
 - Put file paths that begin with `-` after `--`. Symlinks and non-regular files are rejected. The CLI reads files from its own filesystem, so a sandboxed or remote agent cannot import a desktop-only path.
 - Deleting requires one document ID and its current revision. On a revision conflict, read the document again and confirm with the user instead of retrying.
